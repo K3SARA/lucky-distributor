@@ -5,13 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "0.0.0.0",
-    port: 5200,
-    strictPort: true,
-    warmup: {
-      clientFiles: ["./src/App.jsx", "./src/main.jsx", "./src/api.js", "./src/styles.css"]
-    }
-  },
-  optimizeDeps: {
-    include: ["react", "react-dom", "socket.io-client"]
+    port: 5173,
+    strictPort: true
   }
 });

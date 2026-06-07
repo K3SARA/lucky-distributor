@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Raja Food POS",
-    "slug": "Raja Food-pos",
+    "name": "Pepsi POS",
+    "slug": "pepsi-pos",
     "version": "1.0.0",
     "orientation": "portrait",
     "android": {
-      "package": "com.Raja Food.distributor.pos"
+      "package": "com.pepsi.distributor.pos"
     },
     "ios": {
       "supportsTablet": true

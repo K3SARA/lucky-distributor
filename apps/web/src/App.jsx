@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@raja-food/shared";
+import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@pepsi/shared";
 import {
   clearAuthSession,
   createAuthUser,
@@ -40,7 +40,7 @@ const formatLkrValue = (value) => Number(value || 0).toLocaleString("en-US", {
   maximumFractionDigits: 2
 });
 const currency = (value) => `LKR ${formatLkrValue(value)}`;
-const SESSION_KEY = "Raja Food_pos_session";
+const SESSION_KEY = "pepsi_pos_session";
 const BUSINESS_TIME_ZONE = "Asia/Colombo";
 const colomboDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: BUSINESS_TIME_ZONE,
@@ -568,8 +568,8 @@ const openSaleReceiptPrint = ({
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt #${escapeHtml(sale.id)}</title><style>
 @page { size: A4 portrait; margin: 10mm; } body { margin: 0; background: #fff; font-family: "Segoe UI", Arial, sans-serif; color: #111; }
-.sheet { width: 100%; max-width: 190mm; margin: 0 auto; padding: 4mm; } .header { background: linear-gradient(180deg, #dadde2 0%, #d4d8de 100%); border: 1px solid #ced2d8; padding: 6px 14px; display: grid; grid-template-columns: 110px 1fr; gap: 16px; align-items: center; }
-.logo-wrap { display: grid; justify-items: center; align-content: center; gap: 2px; } .logo-wrap img { width: 100px; height: 100px; object-fit: contain; } .logo-wrap span { font-size: 10px; color: #1d3f74; font-weight: 700; letter-spacing: 0.02em; }
+.sheet { width: 100%; max-width: 190mm; margin: 0 auto; padding: 4mm; } .header { background: linear-gradient(180deg, #dadde2 0%, #d4d8de 100%); border: 1px solid #ced2d8; padding: 12px 14px; display: grid; grid-template-columns: 96px 1fr; gap: 16px; align-items: center; }
+.logo-wrap { display: grid; justify-items: center; align-content: center; gap: 2px; } .logo-wrap img { width: 72px; height: 72px; object-fit: contain; } .logo-wrap span { font-size: 10px; color: #1d3f74; font-weight: 700; letter-spacing: 0.02em; }
 .brand-title { text-align: center; font-weight: 900; font-size: 23px; line-height: 1.02; letter-spacing: 0.28px; text-transform: uppercase; }
 .brand-sub { margin: 8px auto 0; width: fit-content; background: rgba(255,255,255,0.96); border: 1px solid #d9dde4; box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); border-radius: 999px; padding: 6px 18px 7px; font-size: 18px; font-weight: 800; letter-spacing: 0.01em; }
 .meta { margin-top: 12px; border: 1px solid #1f2937; border-radius: 16px; padding: 8px 10px; display: grid; grid-template-columns: 54px 1fr; gap: 12px; align-items: start; }
@@ -601,7 +601,7 @@ const openSaleReceiptPrint = ({
 .notes li { margin-bottom: 3px; } .signatures { margin-top: 70px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; text-align: center; font-size: 18px; }
 .sign-line { margin-bottom: 8px; letter-spacing: 2px; } .powered { text-align: center; margin-top: 80px; font-size: 20px; }
   </style></head><body><div class="sheet">
-<div class="header"><div class="logo-wrap"><img src="/invoice-Raja Food.png" alt="Raja Food logo" /></div><div><div class="brand-title">M.W.M.B CHANDRASEKARA<br/>MATALE DISTRIBUTOR</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
+<div class="header"><div class="logo-wrap"><img src="/invoice-pepsi.png" alt="Pepsi logo" /></div><div><div class="brand-title">M.W.M.B CHANDRASEKARA<br/>MATALE DISTRIBUTOR</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
 <div class="meta"><div class="meta-box"></div><div class="meta-grid"><div>Name : <span class="dots">${escapeHtml(pickedCustomer)}</span></div><div>Date : <span class="dots">${escapeHtml(dateLabel)}</span></div><div>Address : <span class="dots">${escapeHtml(customer?.address || "-")}</span></div><div>Tel : <span class="dots">${escapeHtml(printedCustomerPhone)}</span></div><div>Rep : <span class="dots">${escapeHtml(sale?.cashier || "-")}</span></div><div>Invoice No : <span class="dots invoice-dots">${escapeHtml(sale?.id || "-")}</span></div><div>Lorry : <span class="dots">${escapeHtml(sale?.lorry || "-")}</span></div><div></div></div></div>
 <table><thead><tr><th>Item Code</th><th>Qty</th><th>Billing Price</th><th>Item Discount</th><th>Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
 ${bundleGuideText ? `<div class="bundle-guide-line"><span>Bundle Count</span>${escapeHtml(bundleGuideText)}</div>` : ""}
@@ -626,7 +626,7 @@ const LoginScreen = ({ onLogin, error }) => {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <img src="/Raja Food-logo.png" alt="Raja Food logo" />
+          <img src="/pepsi-logo.svg" alt="Pepsi logo" />
         </div>
         <div className="auth-login-title">
           <h2 className="auth-welcome">Welcome Back</h2>
@@ -664,9 +664,9 @@ const Header = ({ dashboard, user, onLogout, managerFullAccess = false }) => {
     <header className="topbar">
       <div className="header-card">
         <div className="brand">
-          <img className="brand-logo" src="/Raja Food-logo.png" alt="Raja Food logo" />
+          <img className="brand-logo" src="/pepsi-logo.png" alt="Pepsi logo" />
           <div className="brand-copy">
-            <h1>Raja Food Distributer</h1>
+            <h1>Pepsi Distributer</h1>
             <p className="brand-user">{headerUser}</p>
             <p className="brand-role">{roleLabel}</p>
             {user.role === "manager" ? (
@@ -4364,10 +4364,10 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 <body>
   <div class="sheet">
     <div class="head">
-      <img src="/invoice-Raja Food.png" alt="Raja Food" />
+      <img src="/invoice-pepsi.png" alt="Pepsi" />
       <div>
         <h1>${escapeHtml(lorry)} Loading Breakdown</h1>
-        <p>Raja Food Distributor POS • Date Range: ${escapeHtml(dateRangeLabel)}</p>
+        <p>Pepsi Distributor POS • Date Range: ${escapeHtml(dateRangeLabel)}</p>
       </div>
     </div>
     <div class="kpis">
@@ -4454,7 +4454,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 <body>
   <div class="sheet">
     <div class="head">
-      <img src="/invoice-Raja Food.png" alt="Raja Food" />
+      <img src="/invoice-pepsi.png" alt="Pepsi" />
       <div>
         <h1>${escapeHtml(rep)} Customer Outstanding</h1>
         <p>Outstanding customer summary by rep</p>
@@ -4555,7 +4555,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       <tbody>${bodyRows}</tbody>
     </table>
     <div class="footer">
-      <div>Raja Food Distributor POS</div>
+      <div>Pepsi Distributor POS</div>
       <div>J&amp;Co. Software Solutions</div>
     </div>
   </div>
@@ -4566,115 +4566,6 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => printWindow.print(), 250);
-  };
-
-  const printOrderForm = () => {
-    const printWindow = window.open("", "_blank", "width=1000,height=1300");
-    if (!printWindow) return;
-    const products = [...(state.products || [])].sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    const half = Math.ceil(products.length / 2);
-    const left = products.slice(0, half);
-    const right = products.slice(half);
-    const rows = Math.max(left.length, right.length);
-    const makeRow = (p) => p
-      ? `<tr><td class="qty"></td><td class="prod">${p.name}</td><td class="rate"></td><td class="val"></td><td class="val"></td></tr>`
-      : `<tr><td class="qty"></td><td class="prod"></td><td class="rate"></td><td class="val"></td><td class="val"></td></tr>`;
-    let tableRows = "";
-    for (let i = 0; i < rows; i++) {
-      tableRows += `<tr>
-        <td class="qty">${left[i] ? "" : ""}</td>
-        <td class="prod">${left[i] ? left[i].name : ""}</td>
-        <td class="rate">${left[i] ? "" : ""}</td>
-        <td class="val rs">${left[i] ? "" : ""}</td>
-        <td class="val cts">${left[i] ? "" : ""}</td>
-        <td class="divider"></td>
-        <td class="qty">${right[i] ? "" : ""}</td>
-        <td class="prod">${right[i] ? right[i].name : ""}</td>
-        <td class="rate">${right[i] ? "" : ""}</td>
-        <td class="val rs">${right[i] ? "" : ""}</td>
-        <td class="val cts">${right[i] ? "" : ""}</td>
-      </tr>`;
-    }
-    const businessName = state.settings?.businessName || "Raja Food Products";
-    const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Order Form</title><style>
-@page { size: A4 portrait; margin: 8mm; }
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Arial, sans-serif; color: #00008b; background: #fff; font-size: 11px; }
-.page { border: 2.5px solid #00008b; padding: 6px 8px; }
-.top-header { display: flex; align-items: center; gap: 10px; border-bottom: 1.5px solid #00008b; padding-bottom: 6px; margin-bottom: 4px; }
-.logo-wrap img { width: 80px; height: 80px; object-fit: contain; }
-.company-info { flex: 1; text-align: center; }
-.company-info h1 { font-size: 28px; font-weight: 900; color: #00008b; letter-spacing: 0.5px; }
-.company-info p { font-size: 13px; font-weight: 600; margin-top: 2px; }
-.ref-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #00008b; font-size: 12px; font-weight: 700; }
-.ref-row .inv-num { font-size: 32px; font-weight: 900; color: #cc0000; line-height: 1; }
-.customer-row { padding: 5px 0; border-bottom: 1px solid #00008b; font-size: 12px; font-weight: 700; }
-.dotline { display: inline-block; width: 260px; border-bottom: 1px dotted #00008b; margin-left: 4px; vertical-align: bottom; }
-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
-th, td { border: 1px solid #00008b; padding: 3px 4px; font-size: 10.5px; }
-th { background: #fff; font-weight: 800; text-align: center; font-size: 10px; }
-td.qty { width: 28px; text-align: center; }
-td.prod { width: 130px; font-weight: 600; }
-td.rate { width: 36px; text-align: center; }
-td.val { width: 30px; text-align: center; }
-td.divider { width: 4px; border: none; background: #00008b; padding: 0; }
-.val-header { display: flex; gap: 0; }
-.foot-row td { font-weight: 800; text-align: right; font-size: 11px; border: 1px solid #00008b; padding: 4px 6px; }
-.foot-row td.label { text-align: right; }
-.foot-row td.blank { width: 30px; }
-.sig-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; font-weight: 700; }
-.sig-block { text-align: center; }
-.sig-line { border-bottom: 1px dotted #00008b; width: 180px; margin-bottom: 3px; height: 22px; }
-</style></head><body><div class="page">
-  <div class="top-header">
-    <div class="logo-wrap"><img src="/invoice-Raja Food.png" alt="logo"/></div>
-    <div class="company-info">
-      <h1>${businessName}</h1>
-      <p>Near the Urban Council Ground</p>
-      <p>Tel: 077120 35 16</p>
-    </div>
-  </div>
-  <div class="ref-row">
-    <span>Ref. No : <span class="dotline" style="width:80px"></span></span>
-    <span class="inv-num">&nbsp;</span>
-    <span>Date : <span class="dotline" style="width:120px"></span></span>
-  </div>
-  <div class="customer-row">Customer : <span class="dotline"></span></div>
-  <table>
-    <thead>
-      <tr>
-        <th>Qty</th><th>Products</th><th>Rate</th><th colspan="2">Value<br/><span style="display:flex;justify-content:space-around;font-size:9px"><span>Rs.</span><span>Cts</span></span></th>
-        <td style="border:none;background:#00008b;width:4px;padding:0"></td>
-        <th>Qty</th><th>Products</th><th>Rate</th><th colspan="2">Value<br/><span style="display:flex;justify-content:space-around;font-size:9px"><span>Rs.</span><span>Cts</span></span></th>
-      </tr>
-    </thead>
-    <tbody>
-      ${tableRows}
-      <tr>
-        <td class="qty"></td><td class="prod" style="text-align:right;font-weight:800">Total</td><td class="rate"></td><td class="val"></td><td class="val"></td>
-        <td style="border:none;background:#00008b;padding:0"></td>
-        <td class="qty"></td><td class="prod" style="text-align:right;font-weight:800">Total</td><td class="rate"></td><td class="val"></td><td class="val"></td>
-      </tr>
-      <tr>
-        <td class="qty"></td><td class="prod" style="text-align:right;font-weight:800">Discount</td><td class="rate"></td><td class="val"></td><td class="val"></td>
-        <td style="border:none;background:#00008b;padding:0"></td>
-        <td class="qty"></td><td class="prod" style="text-align:right;font-weight:800">Discount</td><td class="rate"></td><td class="val"></td><td class="val"></td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #00008b;font-size:9px;vertical-align:bottom;padding:2px 4px"><span style="border-bottom:1px dotted #00008b;display:block;width:100%;margin-bottom:2px">&nbsp;</span>Sales Ref Signature</td>
-        <td class="prod" style="text-align:right;font-weight:800">Net Value</td><td class="rate"></td><td class="val"></td><td class="val"></td>
-        <td style="border:none;background:#00008b;padding:0"></td>
-        <td style="border:1px solid #00008b;font-size:9px;vertical-align:bottom;padding:2px 4px"><span style="border-bottom:1px dotted #00008b;display:block;width:100%;margin-bottom:2px">&nbsp;</span>Customer Signature</td>
-        <td class="prod" style="text-align:right;font-weight:800">Net Value</td><td class="rate"></td><td class="val"></td><td class="val"></td>
-      </tr>
-    </tbody>
-  </table>
-</div></body></html>`;
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => printWindow.print(), 300);
   };
 
   const openDeliveryModal = (sale) => {
@@ -5748,10 +5639,7 @@ td.divider { width: 4px; border: none; background: #00008b; padding: 0; }
 
           {activePage === "stock" ? (
             <section className="admin-mobile-section admin-stock-panel">
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
-                <h2>Stock</h2>
-                <button type="button" className="ghost" style={{ fontWeight: 700, border: "1.5px solid #00008b", color: "#00008b", borderRadius: "6px", padding: "6px 14px" }} onClick={printOrderForm}>🖨 Print Order Form</button>
-              </div>
+              <h2>Stock</h2>
               {showStockForm ? (
                 <div className="low-stock-modal" onClick={() => setShowStockForm(false)}>
                   <div className="low-stock-modal-card stock-entry-modal" onClick={(e) => e.stopPropagation()}>
@@ -8042,7 +7930,7 @@ const selectedBillingCustomer = useMemo(() => {
   useEffect(() => {
     if (!session?.user || typeof window === "undefined") return undefined;
 
-    const marker = { "Raja FoodPosGuard": true, ts: Date.now() };
+    const marker = { pepsiPosGuard: true, ts: Date.now() };
     window.history.pushState(marker, "", window.location.href);
 
     const handlePopState = () => {
@@ -8052,7 +7940,7 @@ const selectedBillingCustomer = useMemo(() => {
         window.history.back();
         return;
       }
-      window.history.pushState({ "Raja FoodPosGuard": true, ts: Date.now() }, "", window.location.href);
+      window.history.pushState({ pepsiPosGuard: true, ts: Date.now() }, "", window.location.href);
     };
 
     window.addEventListener("popstate", handlePopState);

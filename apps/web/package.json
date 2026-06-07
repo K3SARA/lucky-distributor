@@ -1,5 +1,5 @@
 {
-  "name": "@raja-food/web",
+  "name": "@pepsi/web",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@raja-food/shared": "1.0.0",
+    "@pepsi/shared": "1.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "socket.io-client": "^4.8.1"

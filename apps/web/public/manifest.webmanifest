@@ -1,20 +1,20 @@
 {
-  "name": "Raja Food POS",
-  "short_name": "Raja Food POS",
+  "name": "Pepsi POS",
+  "short_name": "Pepsi POS",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#005cb9",
   "icons": [
     {
-      "src": "/Raja Food-title-logo-shortcut.png",
-      "type": "image/png",
+      "src": "/pepsi-title-logo-shortcut.svg",
+      "type": "image/svg+xml",
       "sizes": "any",
       "purpose": "any maskable"
     },
     {
-      "src": "/Raja Food-title-logo-shortcut.png",
-      "type": "image/png",
+      "src": "/pepsi-title-logo-shortcut.svg",
+      "type": "image/svg+xml",
       "sizes": "any",
       "purpose": "any"
     }

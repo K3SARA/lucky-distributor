@@ -5,7 +5,7 @@ import fs from "node:fs";
 import cors from "cors";
 import { Server } from "socket.io";
 import { nanoid } from "nanoid";
-import { SOCKET_EVENTS } from "@raja-food/shared";
+import { SOCKET_EVENTS } from "@pepsi/shared";
 import { enrichSale, seedState } from "./seed.js";
 import { getState, getStoreMeta, replaceState, updateState } from "./store.js";
 import {

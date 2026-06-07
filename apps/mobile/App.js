@@ -2,7 +2,7 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { io } from "socket.io-client";
-import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@raja-food/shared";
+import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@pepsi/shared";
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "http://10.0.2.2:4010";
 const currency = (value) => `LKR ${Number(value || 0).toFixed(2)}`;
@@ -22,8 +22,8 @@ const LoginScreen = ({ onSubmit, error, apiBase }) => {
 
   return (
     <View style={styles.loginWrap}>
-      <Image source={require("./assets/Raja Food.png")} style={styles.mobileLogo} resizeMode="contain" />
-      <Text style={styles.loginTitle}>Raja Food POS</Text>
+      <Image source={require("./assets/Pepsi.png")} style={styles.mobileLogo} resizeMode="contain" />
+      <Text style={styles.loginTitle}>Pepsi POS</Text>
       <Text style={styles.loginHint}>API: {apiBase}</Text>
       <Text style={styles.loginFieldLabel}>Credentials</Text>
       <TextInput value={username} onChangeText={setUsername} placeholder="Username" style={styles.input} autoCapitalize="none" />
@@ -354,8 +354,8 @@ export default function App() {
     <View style={styles.app}>
       <StatusBar style="dark" />
       <View style={styles.topRow}>
-        <Image source={require("./assets/Raja Food.png")} style={styles.topLogo} resizeMode="contain" />
-        <Text style={styles.title}>Raja Food POS - Android ({session.user?.role})</Text>
+        <Image source={require("./assets/Pepsi.png")} style={styles.topLogo} resizeMode="contain" />
+        <Text style={styles.title}>Pepsi POS - Android ({session.user?.role})</Text>
         <TouchableOpacity onPress={logout} style={styles.logout}>
           <Text style={styles.logoutLabel}>Logout</Text>
         </TouchableOpacity>
