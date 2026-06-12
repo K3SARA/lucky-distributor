@@ -234,6 +234,21 @@ const resolveCustomerBundleDiscountLimit = ({ customers = [], customerName = "" 
   );
 };
 
+const resolveCustomerCreditProfile = ({ customers = [], customerName = "" }) => {
+  const key = String(customerName || "").trim().toLowerCase();
+  if (!key || key === "walk-in") {
+    return { creditLimit: 0, openingOutstanding: 0, outstandingAdjustment: 0 };
+  }
+
+  return (customers || [])
+    .filter((customer) => String(customer?.name || "").trim().toLowerCase() === key)
+    .reduce((profile, customer) => ({
+      creditLimit: Math.max(Number(profile.creditLimit || 0), Number(customer?.creditLimit || 0)),
+      openingOutstanding: Math.max(Number(profile.openingOutstanding || 0), Number(customer?.openingOutstanding || 0)),
+      outstandingAdjustment: Math.max(Number(profile.outstandingAdjustment || 0), Number(customer?.outstandingAdjustment || 0))
+    }), { creditLimit: 0, openingOutstanding: 0, outstandingAdjustment: 0 });
+};
+
 const findBundleDiscountViolation = ({ lines = [], bundleDiscountLimit = 0 }) => {
   const limit = roundMoney(bundleDiscountLimit);
   if (!(limit > 0)) return null;
@@ -303,6 +318,24 @@ const recalculateSaleFinancials = (sale) => {
     dueAmount: outstandingAmount,
     refundDueAmount
   };
+};
+
+const calculateCustomerOutstanding = ({ sales = [], customers = [], customerName = "" }) => {
+  const key = String(customerName || "").trim().toLowerCase();
+  if (!key || key === "walk-in") return 0;
+  const profile = resolveCustomerCreditProfile({ customers, customerName });
+  const liveOutstanding = (sales || []).reduce((total, sale) => {
+    const saleCustomer = String(sale?.customerName || "").trim().toLowerCase();
+    if (saleCustomer !== key) return total;
+    return total + Number(recalculateSaleFinancials(sale).outstandingAmount || 0);
+  }, 0);
+
+  return roundMoney(Math.max(
+    0,
+    Number(liveOutstanding || 0)
+      + Number(profile.openingOutstanding || 0)
+      - Number(profile.outstandingAdjustment || 0)
+  ));
 };
 
 const pushStockMovement = (draft, entry) => {
@@ -1146,6 +1179,24 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
       usagePlan
     }];
     prepared.customerCreditApplied = customerCreditAmount;
+  }
+
+  const creditProfile = resolveCustomerCreditProfile({ customers: state.customers || [], customerName: preparedCustomerName });
+  if (Number(creditProfile.creditLimit || 0) > 0) {
+    const currentOutstanding = calculateCustomerOutstanding({
+      sales: state.sales || [],
+      customers: state.customers || [],
+      customerName: preparedCustomerName
+    });
+    const projectedSaleOutstanding = Number(recalculateSaleFinancials(prepared).outstandingAmount || 0);
+    const projectedOutstanding = roundMoney(currentOutstanding + projectedSaleOutstanding);
+    if (projectedOutstanding > roundMoney(creditProfile.creditLimit)) {
+      const availableCreditLimit = roundMoney(Math.max(0, Number(creditProfile.creditLimit || 0) - currentOutstanding));
+      res.status(409).json({
+        message: `Credit limit exceeded for ${preparedCustomerName}. Limit: ${roundMoney(creditProfile.creditLimit).toFixed(2)}, outstanding: ${currentOutstanding.toFixed(2)}, available: ${availableCreditLimit.toFixed(2)}`
+      });
+      return;
+    }
   }
 
   prepared.cashReceived = null;

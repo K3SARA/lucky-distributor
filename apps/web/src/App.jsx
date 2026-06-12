@@ -7772,12 +7772,37 @@ const selectedBillingCustomer = useMemo(() => {
     return matches.reduce((merged, item) => ({
       ...(merged || {}),
       ...item,
+      creditLimit: Math.max(Number(merged?.creditLimit || 0), Number(item.creditLimit || 0)),
+      openingOutstanding: Math.max(Number(merged?.openingOutstanding || 0), Number(item.openingOutstanding || 0)),
+      outstandingAdjustment: Math.max(Number(merged?.outstandingAdjustment || 0), Number(item.outstandingAdjustment || 0)),
       discountLimit: Math.max(Number(merged?.discountLimit || 0), Number(item.discountLimit || 0)),
       bundleDiscountLimit: Math.max(Number(merged?.bundleDiscountLimit || 0), Number(item.bundleDiscountLimit || 0))
     }), null);
   }, [customerName, state.customers]);
+  const selectedCustomerCreditLimit = useMemo(() => Number(selectedBillingCustomer?.creditLimit || 0), [selectedBillingCustomer?.creditLimit]);
   const selectedCustomerDiscountLimit = useMemo(() => Number(selectedBillingCustomer?.discountLimit || 0), [selectedBillingCustomer?.discountLimit]);
   const selectedCustomerBundleDiscountLimit = useMemo(() => Number(selectedBillingCustomer?.bundleDiscountLimit || 0), [selectedBillingCustomer?.bundleDiscountLimit]);
+  const selectedCustomerOutstandingForLimit = useMemo(() => {
+    const key = String(customerName || "").trim().toLowerCase();
+    if (!key || key === "walk-in") return 0;
+    const liveOutstanding = (state.sales || []).reduce((total, sale) => {
+      const saleCustomer = String(sale?.customerName || "").trim().toLowerCase();
+      if (saleCustomer !== key) return total;
+      const outstanding = Number(
+        sale.outstandingAmount !== undefined
+          ? sale.outstandingAmount
+          : (sale.paymentType === "credit" ? saleNetTotal(sale) : 0)
+      ) || 0;
+      return total + outstanding;
+    }, 0);
+
+    return Number(Math.max(
+      0,
+      liveOutstanding
+        + Number(selectedBillingCustomer?.openingOutstanding || 0)
+        - Number(selectedBillingCustomer?.outstandingAdjustment || 0)
+    ).toFixed(2));
+  }, [customerName, selectedBillingCustomer?.openingOutstanding, selectedBillingCustomer?.outstandingAdjustment, state.sales]);
   const cartDiscountTotal = useMemo(() => totalDiscountApplied({ lines: effectiveCartLines, billDiscount: discountAmount }), [effectiveCartLines, discountAmount]);
   const customerCreditMap = useMemo(() => {
     const map = new Map();
@@ -8049,6 +8074,14 @@ const selectedBillingCustomer = useMemo(() => {
       if (bundleDiscountViolation) {
         showErrorModal(`${bundleDiscountViolation.lineName} exceeds bundle discount limit. Allowed ${currency(bundleDiscountViolation.allowedBundleDiscount)} for ${bundleDiscountViolation.fullBundles} bundle(s).`);
         return;
+      }
+      if (selectedCustomerCreditLimit > 0) {
+        const projectedOutstanding = Number((selectedCustomerOutstandingForLimit + totalAfterCustomerCredit).toFixed(2));
+        if (projectedOutstanding > selectedCustomerCreditLimit) {
+          const availableCreditLimit = Math.max(0, Number((selectedCustomerCreditLimit - selectedCustomerOutstandingForLimit).toFixed(2)));
+          showErrorModal(`Credit limit exceeded for ${customerName}. Limit is ${currency(selectedCustomerCreditLimit)}. Current outstanding is ${currency(selectedCustomerOutstandingForLimit)}. Available limit is ${currency(availableCreditLimit)}.`);
+          return;
+        }
       }
       const sale = await submitSale({
         requestId: createSaleRequestId(),
