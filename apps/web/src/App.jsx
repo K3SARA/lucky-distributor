@@ -3249,6 +3249,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       orders: (row) => Number(row.orders || 0),
       spent: (row) => Number(row.spent || 0),
       openingOutstanding: (row) => Number(row.openingOutstanding || 0),
+      creditLimit: (row) => Number(row.creditLimit || 0),
       outstanding: (row) => Number(row.outstanding || 0),
       daysLeft: (row) => {
         const value = row.outstandingDaysLeft;
@@ -5606,7 +5607,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "phone")}>Phone{sortMark("customers", "phone")}</button>
                     <button type="button" className="th-sort" onClick={() => toggleSort("customers", "orders")}>Orders{sortMark("customers", "orders")}</button>
                     <button type="button" className="th-sort" onClick={() => toggleSort("customers", "spent")}>Total Spent (LKR){sortMark("customers", "spent")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "availableCredit")}>Available Credit (LKR){sortMark("customers", "availableCredit")}</button>
+                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "creditLimit")}>Credit Limit (LKR){sortMark("customers", "creditLimit")}</button>
                     <button type="button" className="th-sort" onClick={() => toggleSort("customers", "outstanding")}>Outstanding (LKR){sortMark("customers", "outstanding")}</button>
                     <button type="button" className="th-sort" onClick={() => toggleSort("customers", "daysLeft")}>Days Left{sortMark("customers", "daysLeft")}</button>
                   </header>
@@ -5628,7 +5629,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                     <span>{row.phone || "-"}</span>
                     <span>{row.orders}</span>
                     <span>{formatLkrValue(row.spent || 0)}</span>
-                    <span>{formatLkrValue(row.availableCredit || 0)}</span>
+                    <span>{formatLkrValue(row.creditLimit || 0)}</span>
                     <span className={Number(row.outstanding || 0) > 0 ? "outstanding-text" : ""}>{formatLkrValue(row.outstanding || 0)}</span>
                     <span className={String(row.outstandingDaysLabel || "").toLowerCase().includes("overdue") ? "outstanding-text" : ""}>{row.outstandingDaysLabel || "-"}</span>
                   </article>
