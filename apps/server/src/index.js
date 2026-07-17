@@ -913,6 +913,44 @@ app.patch("/customers/:id", requireAuth, requireRole("admin", "cashier", "manage
   res.json(updated);
 });
 
+app.delete("/customers/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  const state = getState();
+  const target = (state.customers || []).find((item) => item.id === id);
+  if (!target) {
+    res.status(404).json({ message: "Customer not found" });
+    return;
+  }
+
+  const outstanding = calculateCustomerOutstanding({
+    sales: state.sales || [],
+    customers: state.customers || [],
+    customerName: target.name
+  });
+  if (outstanding > 0) {
+    res.status(409).json({ message: "Cannot delete a customer with an outstanding balance" });
+    return;
+  }
+
+  let removed = null;
+  updateState((draft) => {
+    draft.customers = draft.customers || [];
+    const idx = draft.customers.findIndex((item) => item.id === id);
+    if (idx === -1) return draft;
+    removed = draft.customers[idx];
+    draft.customers.splice(idx, 1);
+    return draft;
+  });
+
+  if (!removed) {
+    res.status(404).json({ message: "Customer not found" });
+    return;
+  }
+
+  sendFullSync();
+  res.json({ ok: true, deleted: removed });
+});
+
 app.post("/settings/lorry-count-reset", requireAuth, requireRole("admin", "manager"), (req, res) => {
   const now = new Date().toISOString();
   const next = updateState((state) => {

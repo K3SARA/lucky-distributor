@@ -11,6 +11,7 @@ import {
   createProduct,
   createStaff,
   deleteAuthUser,
+  deleteCustomer,
   deleteSale,
   deleteStaff,
   deleteProduct,
@@ -5332,6 +5333,31 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       .catch((error) => setNotice(error.message));
   };
 
+  const deleteCustomerByRow = async (row) => {
+    if (!row?.id) {
+      setNotice("Selected customer was not found in saved list.");
+      return;
+    }
+    if (!(isAdmin || (isManager && managerFullAccessEnabled))) {
+      setNotice("Manager limited access cannot delete customers.");
+      return;
+    }
+    const ok = await requestConfirm({
+      title: "Delete Customer",
+      message: `Are you sure you want to delete ${row.name}? This cannot be undone.`,
+      confirmLabel: "Delete",
+      tone: "danger"
+    });
+    if (!ok) return;
+    try {
+      await deleteCustomer(row.id);
+      setNotice(`Customer deleted: ${row.name}.`);
+      setCustomerDetailName("");
+    } catch (error) {
+      setNotice(error.message);
+    }
+  };
+
   const openStaffAdd = () => {
     if (!canManageUsers) {
       setNotice("Manager access cannot create or edit users.");
@@ -7953,6 +7979,15 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               >
                 Edit Customer
               </button>
+              {(isAdmin || (isManager && managerFullAccessEnabled)) && customerDetailData.row.id ? (
+                <button
+                  type="button"
+                  className="row-danger"
+                  onClick={() => deleteCustomerByRow(customerDetailData.row)}
+                >
+                  Delete Customer
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

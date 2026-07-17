@@ -192,6 +192,11 @@ export const updateCustomer = (id, payload) =>
     body: JSON.stringify(payload)
   });
 
+export const deleteCustomer = (id) =>
+  request(`/customers/${id}`, {
+    method: "DELETE"
+  });
+
 export const createStaff = (payload) =>
   request("/staff", {
     method: "POST",
