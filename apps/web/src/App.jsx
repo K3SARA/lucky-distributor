@@ -8431,6 +8431,46 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
           </div>
         </div>
       ) : null}
+      {showResetDataModal ? (
+        <div className="low-stock-modal" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>
+          <div className="low-stock-modal-card confirm-modal-card confirm-modal-card-danger" onClick={(e) => e.stopPropagation()}>
+            <div className="low-stock-modal-head">
+              <h3>Reset Data</h3>
+              <button type="button" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>Close</button>
+            </div>
+            <p className="confirm-modal-text">
+              This permanently deletes sales, returns, stock movements, customers, customer credits, empty bottle
+              records, and staff. This cannot be undone.
+            </p>
+            <label className="stock-form-field">
+              <span>Type DELETE to confirm</span>
+              <input
+                value={resetDataConfirmText}
+                onChange={(e) => setResetDataConfirmText(e.target.value)}
+                placeholder="DELETE"
+              />
+            </label>
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                className="row-danger"
+                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
+                onClick={() => handleResetAllData("keep-products")}
+              >
+                Delete all data instead of Products(SKUs)
+              </button>
+              <button
+                type="button"
+                className="row-danger"
+                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
+                onClick={() => handleResetAllData("full")}
+              >
+                Delete all data
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 };
@@ -9004,46 +9044,6 @@ export const App = () => {
             <div className="confirm-modal-actions">
               <button type="button" className="ghost" onClick={() => resolveConfirm(false)}>{confirmModal.cancelLabel || "Cancel"}</button>
               <button type="button" className={confirmModal.tone === "danger" ? "row-danger" : ""} onClick={() => resolveConfirm(true)}>{confirmModal.confirmLabel || "Confirm"}</button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {showResetDataModal ? (
-        <div className="low-stock-modal" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>
-          <div className="low-stock-modal-card confirm-modal-card confirm-modal-card-danger" onClick={(e) => e.stopPropagation()}>
-            <div className="low-stock-modal-head">
-              <h3>Reset Data</h3>
-              <button type="button" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>Close</button>
-            </div>
-            <p className="confirm-modal-text">
-              This permanently deletes sales, returns, stock movements, customers, customer credits, empty bottle
-              records, and staff. This cannot be undone.
-            </p>
-            <label className="stock-form-field">
-              <span>Type DELETE to confirm</span>
-              <input
-                value={resetDataConfirmText}
-                onChange={(e) => setResetDataConfirmText(e.target.value)}
-                placeholder="DELETE"
-              />
-            </label>
-            <div className="confirm-modal-actions">
-              <button
-                type="button"
-                className="row-danger"
-                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
-                onClick={() => handleResetAllData("keep-products")}
-              >
-                Delete all data instead of Products(SKUs)
-              </button>
-              <button
-                type="button"
-                className="row-danger"
-                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
-                onClick={() => handleResetAllData("full")}
-              >
-                Delete all data
-              </button>
             </div>
           </div>
         </div>
