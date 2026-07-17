@@ -1,0 +1,23 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy monorepo manifests first for dependency install layer caching
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+
+# Copy only the workspaces needed to build the frontend
+COPY apps/web apps/web
+COPY packages/shared packages/shared
+
+# Install web + shared workspace dependencies (dev deps needed for the vite build)
+RUN npm install --workspace=packages/shared --workspace=apps/web --include-workspace-root
+
+RUN npm run build -w apps/web
+
+ENV NODE_ENV=production
+
+WORKDIR /app/apps/web
+
+CMD ["npm", "run", "start"]
