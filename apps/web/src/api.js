@@ -197,6 +197,12 @@ export const deleteCustomer = (id) =>
     method: "DELETE"
   });
 
+export const resetAllData = (mode) =>
+  request("/admin/reset-data", {
+    method: "POST",
+    body: JSON.stringify({ mode })
+  });
+
 export const createStaff = (payload) =>
   request("/staff", {
     method: "POST",

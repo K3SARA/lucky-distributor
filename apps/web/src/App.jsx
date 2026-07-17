@@ -35,6 +35,7 @@ import {
   updateAuthUser,
   updateStaff,
   resetLorryCount,
+  resetAllData,
   setLoadingRowMark
 } from "./api.js";
 
@@ -3342,6 +3343,9 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [deliveryError, setDeliveryError] = useState("");
   const [savingDelivery, setSavingDelivery] = useState(false);
   const [resettingLorryCount, setResettingLorryCount] = useState(false);
+  const [showResetDataModal, setShowResetDataModal] = useState(false);
+  const [resetDataConfirmText, setResetDataConfirmText] = useState("");
+  const [resettingData, setResettingData] = useState(false);
   const [loadingMarkPendingKey, setLoadingMarkPendingKey] = useState("");
   const [stockSummaryDetailMode, setStockSummaryDetailMode] = useState("");
   const [tableSort, setTableSort] = useState({});
@@ -5499,6 +5503,32 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     }
   };
 
+  const handleResetAllData = async (mode) => {
+    if (!isAdmin) {
+      setNotice("Only admin can reset data.");
+      return;
+    }
+    if (resetDataConfirmText.trim().toUpperCase() !== "DELETE") {
+      setNotice('Type "DELETE" to confirm.');
+      return;
+    }
+    try {
+      setResettingData(true);
+      await resetAllData(mode);
+      setNotice(
+        mode === "full"
+          ? "All data deleted, including products."
+          : "All data deleted except products (SKUs)."
+      );
+      setShowResetDataModal(false);
+      setResetDataConfirmText("");
+    } catch (error) {
+      setNotice(error.message || "Unable to reset data.");
+    } finally {
+      setResettingData(false);
+    }
+  };
+
   const handleResetLorryCount = async () => {
     const accepted = await requestConfirm({
       title: "Reset Lorry Count",
@@ -6940,6 +6970,24 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                     aria-pressed={managerFullAccessEnabled}
                   >
                     <span>{managerAccessPending ? "..." : managerFullAccessEnabled ? "ON" : "OFF"}</span>
+                  </button>
+                </div>
+              ) : null}
+              {isAdmin ? (
+                <div className="dashboard-notification-row manager-access-row">
+                  <div className="dashboard-notification-copy">
+                    <strong>Danger Zone</strong>
+                    <span>Permanently delete sales, customers, and other stored data.</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="row-danger"
+                    onClick={() => {
+                      setResetDataConfirmText("");
+                      setShowResetDataModal(true);
+                    }}
+                  >
+                    Reset Data
                   </button>
                 </div>
               ) : null}
@@ -8956,6 +9004,46 @@ export const App = () => {
             <div className="confirm-modal-actions">
               <button type="button" className="ghost" onClick={() => resolveConfirm(false)}>{confirmModal.cancelLabel || "Cancel"}</button>
               <button type="button" className={confirmModal.tone === "danger" ? "row-danger" : ""} onClick={() => resolveConfirm(true)}>{confirmModal.confirmLabel || "Confirm"}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showResetDataModal ? (
+        <div className="low-stock-modal" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>
+          <div className="low-stock-modal-card confirm-modal-card confirm-modal-card-danger" onClick={(e) => e.stopPropagation()}>
+            <div className="low-stock-modal-head">
+              <h3>Reset Data</h3>
+              <button type="button" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>Close</button>
+            </div>
+            <p className="confirm-modal-text">
+              This permanently deletes sales, returns, stock movements, customers, customer credits, empty bottle
+              records, and staff. This cannot be undone.
+            </p>
+            <label className="stock-form-field">
+              <span>Type DELETE to confirm</span>
+              <input
+                value={resetDataConfirmText}
+                onChange={(e) => setResetDataConfirmText(e.target.value)}
+                placeholder="DELETE"
+              />
+            </label>
+            <div className="confirm-modal-actions">
+              <button
+                type="button"
+                className="row-danger"
+                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
+                onClick={() => handleResetAllData("keep-products")}
+              >
+                Delete all data instead of Products(SKUs)
+              </button>
+              <button
+                type="button"
+                className="row-danger"
+                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
+                onClick={() => handleResetAllData("full")}
+              >
+                Delete all data
+              </button>
             </div>
           </div>
         </div>

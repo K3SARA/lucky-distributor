@@ -951,6 +951,31 @@ app.delete("/customers/:id", requireAuth, requireAdminOrManagerFullAccess, (req,
   res.json({ ok: true, deleted: removed });
 });
 
+app.post("/admin/reset-data", requireAuth, requireRole("admin"), (req, res) => {
+  const mode = String(req.body?.mode || "").trim();
+  if (!["keep-products", "full"].includes(mode)) {
+    res.status(400).json({ message: "mode must be 'keep-products' or 'full'" });
+    return;
+  }
+
+  updateState((draft) => {
+    draft.sales = [];
+    draft.returns = [];
+    draft.stockMovements = [];
+    draft.customers = [];
+    draft.customerCredits = [];
+    draft.emptyBottleCollections = [];
+    draft.staff = [];
+    if (mode === "full") {
+      draft.products = [];
+    }
+    return draft;
+  });
+
+  sendFullSync();
+  res.json({ ok: true, mode });
+});
+
 app.post("/settings/lorry-count-reset", requireAuth, requireRole("admin", "manager"), (req, res) => {
   const now = new Date().toISOString();
   const next = updateState((state) => {
