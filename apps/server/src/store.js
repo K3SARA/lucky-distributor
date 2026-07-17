@@ -125,3 +125,42 @@ export const replaceState = (nextState) => {
   persistState(cachedState);
   return cachedState;
 };
+
+const runMigrations = () => {
+  if (!cachedState) return;
+  const products = cachedState.products || [];
+  const productMap = new Map(products.map((p) => [p.id, p]));
+  let migrated = false;
+  
+  const migratedSales = (cachedState.sales || []).map((sale) => {
+    let saleMigrated = false;
+    const nextLines = (sale.lines || []).map((line) => {
+      if (line.invoicePrice === undefined) {
+        const prod = productMap.get(line.productId);
+        const fallbackInvoice = prod ? Number(prod.invoicePrice || 0) : 0;
+        saleMigrated = true;
+        migrated = true;
+        return {
+          ...line,
+          invoicePrice: fallbackInvoice
+        };
+      }
+      return line;
+    });
+    if (saleMigrated) {
+      return {
+        ...sale,
+        lines: nextLines
+      };
+    }
+    return sale;
+  });
+  
+  if (migrated) {
+    cachedState.sales = migratedSales;
+    persistState(cachedState);
+    console.log("Migrated sales lines with missing invoicePrice and persisted state.");
+  }
+};
+
+runMigrations();

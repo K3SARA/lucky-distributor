@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@pepsi/shared";
+import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@lucky/shared";
 import {
   clearAuthSession,
+  collectEmptyBottles,
+  confirmPreorder,
   createAuthUser,
   fetchAuthUsers,
   createCustomer,
@@ -40,7 +42,7 @@ const formatLkrValue = (value) => Number(value || 0).toLocaleString("en-US", {
   maximumFractionDigits: 2
 });
 const currency = (value) => `LKR ${formatLkrValue(value)}`;
-const SESSION_KEY = "pepsi_pos_session";
+const SESSION_KEY = "lucky_pos_session";
 const BUSINESS_TIME_ZONE = "Asia/Colombo";
 const colomboDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: BUSINESS_TIME_ZONE,
@@ -62,12 +64,14 @@ const escapeHtml = (value = "") => String(value)
   .replace(/'/g, "&#039;");
 
 const BUNDLE_BY_SIZE_ML = {
+  180: 24,
   200: 24,
   250: 30,
   300: 24,
   400: 24,
   1000: 12,
   1500: 12,
+  1800: 6,
   2000: 9
 };
 const BASE_LORRIES = ["Lorry A", "Lorry B"];
@@ -463,7 +467,7 @@ const openSaleReceiptPrint = ({
   customers = [],
   products = [],
   fallbackCustomerName = "",
-  onPopupBlocked = () => {},
+  onPopupBlocked = () => { },
   returnByProduct = new Map(),
   undeliveredByProduct = new Map(),
   returnedAmountOverride = null,
@@ -482,62 +486,62 @@ const openSaleReceiptPrint = ({
   );
   const printedCustomerPhone = String(sale?.customerPhone || customer?.phone || "-").trim() || "-";
 
-    const baseLines = Array.isArray(sale?.lines) ? sale.lines : [];
-    const rawBillDiscount = Number(sale?.discountAmount || sale?.discount || 0);
-    const returnedAmount = Number(
-      returnedAmountOverride !== null && returnedAmountOverride !== undefined
-        ? returnedAmountOverride
-        : sale?.returnedAmount || 0
-    );
-    const undeliveredAmount = Number(sale?.undeliveredAmount || 0);
-    const hasAdjustedLines = returnedAmount > 0 || undeliveredAmount > 0;
-    const lines = baseLines.map((line) => {
-      const returned = returnByProduct?.get?.(String(line?.productId || "")) || { qty: 0, amount: 0 };
-      const originalQty = Number(line?.quantity || 0);
-      const undeliveredQty = Number(undeliveredByProduct?.get?.(String(line?.productId || "")) || 0);
-      const soldAfterDelivery = Math.max(0, originalQty - undeliveredQty);
-      const qty = Math.max(0, soldAfterDelivery - Number(returned.qty || 0));
-      const product = (products || []).find((p) => p.id === line?.productId);
-      const billingPrice = Number(line?.basePrice ?? line?.price ?? product?.billingPrice ?? product?.price ?? 0);
-      const itemDiscount = lineItemDiscount(line);
-      const netUnit = Math.max(0, Number(line?.price ?? (billingPrice - itemDiscount)));
-      const sku = line?.sku || product?.sku || "";
-      const saleSubTotal = Number(sale?.subTotal || 0);
-      const grossRemaining = Number((netUnit * qty).toFixed(2));
-      const remainingBillDiscountShare = saleSubTotal > 0
-        ? Number((rawBillDiscount * (grossRemaining / saleSubTotal)).toFixed(2))
-        : 0;
-      const adjustedTotal = Math.max(0, Number((grossRemaining - remainingBillDiscountShare).toFixed(2)));
-      const rowTotal = hasAdjustedLines ? adjustedTotal : grossRemaining;
-      const bundleSource = product || line;
-      const bundleSize = getBundleSize(bundleSource);
-      const bundles = bundleSize ? Math.floor(qty / bundleSize) : 0;
-      const singles = bundleSize ? qty % bundleSize : qty;
-      return {
-        sku,
-        qty,
-        billingPrice,
-        itemDiscount,
-        billDiscountShare: remainingBillDiscountShare,
-        total: rowTotal,
-        adjustedTotal,
-        grossRemaining,
-        undeliveredQty,
-        returnedQty: Number(returned.qty || 0),
-        returnedAmount: Number(returned.amount || 0),
-        originalQty,
-        bundles,
-        singles,
-        bundleSize,
-        bundleRule: bundleRuleLabel(bundleSource)
-      };
-    }).filter((line) => line.qty > 0 || line.total > 0);
+  const baseLines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const rawBillDiscount = Number(sale?.discountAmount || sale?.discount || 0);
+  const returnedAmount = Number(
+    returnedAmountOverride !== null && returnedAmountOverride !== undefined
+      ? returnedAmountOverride
+      : sale?.returnedAmount || 0
+  );
+  const undeliveredAmount = Number(sale?.undeliveredAmount || 0);
+  const hasAdjustedLines = returnedAmount > 0 || undeliveredAmount > 0;
+  const lines = baseLines.map((line) => {
+    const returned = returnByProduct?.get?.(String(line?.productId || "")) || { qty: 0, amount: 0 };
+    const originalQty = Number(line?.quantity || 0);
+    const undeliveredQty = Number(undeliveredByProduct?.get?.(String(line?.productId || "")) || 0);
+    const soldAfterDelivery = Math.max(0, originalQty - undeliveredQty);
+    const qty = Math.max(0, soldAfterDelivery - Number(returned.qty || 0));
+    const product = (products || []).find((p) => p.id === line?.productId);
+    const billingPrice = Number(line?.basePrice ?? line?.price ?? product?.billingPrice ?? product?.price ?? 0);
+    const itemDiscount = lineItemDiscount(line);
+    const netUnit = Math.max(0, Number(line?.price ?? (billingPrice - itemDiscount)));
+    const sku = line?.sku || product?.sku || "";
+    const saleSubTotal = Number(sale?.subTotal || 0);
+    const grossRemaining = Number((netUnit * qty).toFixed(2));
+    const remainingBillDiscountShare = saleSubTotal > 0
+      ? Number((rawBillDiscount * (grossRemaining / saleSubTotal)).toFixed(2))
+      : 0;
+    const adjustedTotal = Math.max(0, Number((grossRemaining - remainingBillDiscountShare).toFixed(2)));
+    const rowTotal = hasAdjustedLines ? adjustedTotal : grossRemaining;
+    const bundleSource = product || line;
+    const bundleSize = getBundleSize(bundleSource);
+    const bundles = bundleSize ? Math.floor(qty / bundleSize) : 0;
+    const singles = bundleSize ? qty % bundleSize : qty;
+    return {
+      sku,
+      qty,
+      billingPrice,
+      itemDiscount,
+      billDiscountShare: remainingBillDiscountShare,
+      total: rowTotal,
+      adjustedTotal,
+      grossRemaining,
+      undeliveredQty,
+      returnedQty: Number(returned.qty || 0),
+      returnedAmount: Number(returned.amount || 0),
+      originalQty,
+      bundles,
+      singles,
+      bundleSize,
+      bundleRule: bundleRuleLabel(bundleSource)
+    };
+  }).filter((line) => line.qty > 0 || line.total > 0);
 
   const printedTotal = Number(
-      totalOverride !== null && totalOverride !== undefined
-        ? totalOverride
-        : saleNetTotal(sale)
-    );
+    totalOverride !== null && totalOverride !== undefined
+      ? totalOverride
+      : saleNetTotal(sale)
+  );
   const customerCreditApplied = saleCustomerCreditApplied(sale);
   const paymentDisplay = saleDisplayPaymentInfo(sale);
   const lineSubtotal = Number(lines.reduce((acc, line) => acc + Number(line.grossRemaining || 0), 0).toFixed(2));
@@ -601,7 +605,7 @@ const openSaleReceiptPrint = ({
 .notes li { margin-bottom: 3px; } .signatures { margin-top: 70px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; text-align: center; font-size: 18px; }
 .sign-line { margin-bottom: 8px; letter-spacing: 2px; } .powered { text-align: center; margin-top: 80px; font-size: 20px; }
   </style></head><body><div class="sheet">
-<div class="header"><div class="logo-wrap"><img src="/invoice-pepsi.png" alt="Pepsi logo" /></div><div><div class="brand-title">M.W.M.B CHANDRASEKARA<br/>MATALE DISTRIBUTOR</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
+<div class="header"><div class="logo-wrap"><img src="/lucky-logo.png" alt="Lucky logo" /></div><div><div class="brand-title">Kanishka Perera<br/>MATALE DISTRIBUTOR</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
 <div class="meta"><div class="meta-box"></div><div class="meta-grid"><div>Name : <span class="dots">${escapeHtml(pickedCustomer)}</span></div><div>Date : <span class="dots">${escapeHtml(dateLabel)}</span></div><div>Address : <span class="dots">${escapeHtml(customer?.address || "-")}</span></div><div>Tel : <span class="dots">${escapeHtml(printedCustomerPhone)}</span></div><div>Rep : <span class="dots">${escapeHtml(sale?.cashier || "-")}</span></div><div>Invoice No : <span class="dots invoice-dots">${escapeHtml(sale?.id || "-")}</span></div><div>Lorry : <span class="dots">${escapeHtml(sale?.lorry || "-")}</span></div><div></div></div></div>
 <table><thead><tr><th>Item Code</th><th>Qty</th><th>Billing Price</th><th>Item Discount</th><th>Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
 ${bundleGuideText ? `<div class="bundle-guide-line"><span>Bundle Count</span>${escapeHtml(bundleGuideText)}</div>` : ""}
@@ -609,6 +613,81 @@ ${bundleGuideText ? `<div class="bundle-guide-line"><span>Bundle Count</span>${e
 <ul class="notes"><li>Return or exchange only with this receipt</li><li>Credit Payment for all goods shall be made No later than 14 days</li></ul>
 <div class="signatures"><div><div class="sign-line">.......................................</div><div>Customer Signature</div><div>Rubber Stamp</div></div><div><div class="sign-line">.......................................</div><div>P.S.R Signature</div></div></div>
 <div class="powered">Powered By J&amp;Co.</div></div></body></html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(receiptHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 250);
+};
+
+const openPreOrderReceiptPrint = ({
+  sale,
+  customers = [],
+  fallbackCustomerName = "",
+  onPopupBlocked = () => { }
+}) => {
+  if (typeof window === "undefined" || !sale) return;
+  const toMoney = (value) => formatLkrValue(value);
+  const saleDate = new Date(sale?.createdAt || Date.now());
+  const dateLabel = Number.isNaN(saleDate.getTime())
+    ? ""
+    : `${String(saleDate.getDate()).padStart(2, "0")}/${String(saleDate.getMonth() + 1).padStart(2, "0")}/${saleDate.getFullYear()}`;
+
+  const pickedCustomer = String(sale?.customerName || fallbackCustomerName || "Walk-in").trim() || "Walk-in";
+  const customer = (customers || []).find(
+    (row) => String(row?.name || "").trim().toLowerCase() === pickedCustomer.toLowerCase()
+  );
+  const printedCustomerPhone = String(sale?.customerPhone || customer?.phone || "-").trim() || "-";
+
+  const lines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const rowsHtml = lines.map((line) => {
+    const qty = Number(line?.quantity || 0);
+    const price = Number(line?.price ?? line?.basePrice ?? 0);
+    const total = Number((price * qty).toFixed(2));
+    return `<tr><td>${escapeHtml(line?.name || "")}</td><td class="c">${qty}</td><td class="r">${toMoney(price)}</td><td class="r">${toMoney(total)}</td></tr>`;
+  }).join("");
+
+  const printedTotal = Number(sale?.total || 0);
+
+  const printWindow = window.open("", "_blank", "width=380,height=640");
+  if (!printWindow) {
+    onPopupBlocked();
+    return;
+  }
+
+  const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Pre-Order #${escapeHtml(sale.id)}</title><style>
+@page { size: 80mm auto; margin: 3mm; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-size: 12px; }
+.sheet { width: 100%; }
+.center { text-align: center; }
+.title { font-weight: 900; font-size: 15px; text-transform: uppercase; }
+.tag { display: inline-block; margin-top: 3px; padding: 2px 8px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+.meta { margin-top: 8px; font-size: 11.5px; line-height: 1.5; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+th, td { border-bottom: 1px solid #ccc; padding: 3px 2px; text-align: left; }
+th { font-size: 10px; text-transform: uppercase; }
+.c { text-align: center; } .r { text-align: right; }
+.total-row { margin-top: 8px; display: flex; justify-content: space-between; font-weight: 900; font-size: 14px; border-top: 1px solid #111; padding-top: 6px; }
+.note { margin-top: 10px; font-size: 10.5px; line-height: 1.4; }
+.sign-box { margin-top: 26px; }
+.sign-line { border-bottom: 1px dotted #111; height: 30px; }
+.sign-label { margin-top: 4px; font-size: 10.5px; text-align: center; }
+</style></head><body><div class="sheet">
+<div class="center"><div class="title">Lucky Distributor</div><div class="tag">Pre-Order</div></div>
+<div class="meta">
+Customer: ${escapeHtml(pickedCustomer)}<br/>
+Phone: ${escapeHtml(printedCustomerPhone)}<br/>
+Date: ${escapeHtml(dateLabel)}<br/>
+Rep: ${escapeHtml(sale?.cashier || "-")}<br/>
+Pre-Order No: ${escapeHtml(sale?.id || "-")}<br/>
+Lorry: ${escapeHtml(sale?.lorry || "-")}
+</div>
+<table><thead><tr><th>Item</th><th class="c">Qty</th><th class="r">Price</th><th class="r">Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+<div class="total-row"><span>Total</span><span>LKR ${toMoney(printedTotal)}</span></div>
+<div class="note">This is a pre-order confirmation. Stock is reserved but not yet billed. Payment will be collected on delivery.</div>
+<div class="sign-box"><div class="sign-line"></div><div class="sign-label">Customer Signature (confirming this pre-order)</div></div>
+</div></body></html>`;
 
   printWindow.document.open();
   printWindow.document.write(receiptHtml);
@@ -626,7 +705,7 @@ const LoginScreen = ({ onLogin, error }) => {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-brand">
-          <img src="/pepsi-logo.svg" alt="Pepsi logo" />
+          <img src="/lucky-logo.png" alt="Lucky logo" />
         </div>
         <div className="auth-login-title">
           <h2 className="auth-welcome">Welcome Back</h2>
@@ -653,7 +732,7 @@ const LoginScreen = ({ onLogin, error }) => {
 };
 
 const Header = ({ dashboard, user, onLogout, managerFullAccess = false }) => {
-  const headerUser = user.role === "admin" ? "M.W.M.B CHANDRASEKARA" : (user.name || user.username || "").toUpperCase();
+  const headerUser = user.role === "admin" ? "Kanishka Perera" : (user.name || user.username || "").toUpperCase();
   const roleLabel = user.role === "cashier"
     ? "Cashier Dashboard"
     : user.role === "manager"
@@ -664,9 +743,9 @@ const Header = ({ dashboard, user, onLogout, managerFullAccess = false }) => {
     <header className="topbar">
       <div className="header-card">
         <div className="brand">
-          <img className="brand-logo" src="/pepsi-logo.png" alt="Pepsi logo" />
+          <img className="brand-logo" src="/lucky-logo.png" alt="Lucky logo" />
           <div className="brand-copy">
-            <h1>Pepsi Distributer</h1>
+            <h1>Lucky Distributor</h1>
             <p className="brand-user">{headerUser}</p>
             <p className="brand-role">{roleLabel}</p>
             {user.role === "manager" ? (
@@ -678,7 +757,7 @@ const Header = ({ dashboard, user, onLogout, managerFullAccess = false }) => {
         </div>
         <button className="logout-btn" type="button" onClick={onLogout}>LOG OUT</button>
       </div>
-      
+
     </header>
   );
 };
@@ -691,8 +770,13 @@ const CashierView = ({
   cashier,
   customerName,
   setCustomerName,
+  showPostSaleHomeButton,
+  setShowPostSaleHomeButton,
   lorry,
   setLorry,
+  isPreOrderMode,
+  setIsPreOrderMode,
+  preOrderReservedMap,
   paymentType,
   setPaymentType,
   cashReceived,
@@ -711,6 +795,7 @@ const CashierView = ({
   setDiscountMode,
   discountValue,
   setDiscountValue,
+  selectedCustomerCreditLimit,
   selectedCustomerDiscountLimit,
   selectedCustomerBundleDiscountLimit,
   selectedCustomerAvailableCredit,
@@ -724,16 +809,16 @@ const CashierView = ({
   cart,
   setCart,
   totals,
-    message,
-    setMessage,
-    onSaleDeleted,
-    onSuccess,
-    onLogout,
-    onBillingFocusChange,
-    requestConfirm,
-    savingCheckout,
-    checkout
-  }) => {
+  message,
+  setMessage,
+  onSaleDeleted,
+  onSuccess,
+  onLogout,
+  onBillingFocusChange,
+  requestConfirm,
+  savingCheckout,
+  checkout
+}) => {
   const LORRY_CAPACITY = 2880;
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -773,7 +858,8 @@ const CashierView = ({
   const getCatalogStock = (product) => {
     const currentStock = Number(product?.stock || 0);
     const reserved = Number(cartQtyByProduct.get(product?.id) || 0);
-    return Math.max(0, currentStock - reserved);
+    const otherPreOrderReserved = isPreOrderMode ? Number(preOrderReservedMap?.get(product?.id) || 0) : 0;
+    return Math.max(0, currentStock - reserved - otherPreOrderReserved);
   };
   const lowStockThreshold = Number(state?.settings?.lowStockThreshold ?? 20);
 
@@ -995,7 +1081,7 @@ const CashierView = ({
       if (typeof vibrate !== "function") return;
       const ok = vibrate.call(window.navigator, [18, 12, 22]);
       if (!ok) vibrate.call(window.navigator, 28);
-    } catch {}
+    } catch { }
   };
 
   const addToCartWithQty = (product, requestedQty) => {
@@ -1003,10 +1089,11 @@ const CashierView = ({
     triggerAddHaptic();
     const requested = Math.floor(Number(requestedQty || 1));
     const requestQty = Number.isFinite(requested) && requested > 0 ? requested : 1;
+    const otherPreOrderReserved = isPreOrderMode ? Number(preOrderReservedMap?.get(product.id) || 0) : 0;
     setCart((current) => {
       const idx = current.findIndex((line) => line.productId === product.id);
       const alreadyInCart = idx === -1 ? 0 : Number(current[idx].quantity || 0);
-      const available = Math.max(0, Number(product.stock || 0) - alreadyInCart);
+      const available = Math.max(0, Number(product.stock || 0) - otherPreOrderReserved - alreadyInCart);
       if (available <= 0) return current;
       const addQty = Math.min(available, requestQty);
       if (idx === -1) return [...current, {
@@ -1050,7 +1137,8 @@ const CashierView = ({
     }
     const product = state?.products?.find((p) => p.id === productId);
     if (product) {
-      const stockLimit = Math.max(0, Number(product.stock || 0));
+      const otherPreOrderReserved = isPreOrderMode ? Number(preOrderReservedMap?.get(productId) || 0) : 0;
+      const stockLimit = Math.max(0, Number(product.stock || 0) - otherPreOrderReserved);
       if (nextQty > stockLimit) nextQty = stockLimit;
     }
     setCart((current) => current.map((line) => (line.productId === productId ? { ...line, quantity: nextQty } : line)));
@@ -1086,16 +1174,12 @@ const CashierView = ({
       return { ...line, itemDiscountMode: nextMode, itemDiscount: clamped };
     }));
   };
-  const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [showCartPopup, setShowCartPopup] = useState(false);
   const [showItemSizePicker, setShowItemSizePicker] = useState(false);
   const [activeItemSize, setActiveItemSize] = useState("");
   const [sizeProductSearch, setSizeProductSearch] = useState("");
   const [expandedSizeProductId, setExpandedSizeProductId] = useState("");
-  const [customerDraft, setCustomerDraft] = useState({ name: "", phone: "", address: "" });
-  const [customerDraftError, setCustomerDraftError] = useState("");
-  const [savingCustomer, setSavingCustomer] = useState(false);
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [catalogQtyDrafts, setCatalogQtyDrafts] = useState({});
   const [cashierPage, setCashierPage] = useState("billing");
@@ -1105,10 +1189,26 @@ const CashierView = ({
   const [returnLinesDraft, setReturnLinesDraft] = useState({});
   const [returnError, setReturnError] = useState("");
   const [savingReturn, setSavingReturn] = useState(false);
+  const [preorderSaleId, setPreorderSaleId] = useState("");
+  const [preorderCustomerName, setPreorderCustomerName] = useState("");
+  const [showPreorderCustomerSuggestions, setShowPreorderCustomerSuggestions] = useState(false);
+  const [preorderDeliveredDraft, setPreorderDeliveredDraft] = useState({});
+  const [preorderPaymentMethod, setPreorderPaymentMethod] = useState("cash");
+  const [preorderCashReceived, setPreorderCashReceived] = useState("");
+  const [preorderChequeNo, setPreorderChequeNo] = useState("");
+  const [preorderChequeDate, setPreorderChequeDate] = useState("");
+  const [preorderChequeBank, setPreorderChequeBank] = useState("");
+  const [preorderError, setPreorderError] = useState("");
+  const [savingPreorderConfirm, setSavingPreorderConfirm] = useState(false);
+  const [emptyBottleSaleId, setEmptyBottleSaleId] = useState("");
+  const [emptyBottleCustomerName, setEmptyBottleCustomerName] = useState("");
+  const [showEmptyBottleCustomerSuggestions, setShowEmptyBottleCustomerSuggestions] = useState(false);
+  const [emptyBottleQtyDraft, setEmptyBottleQtyDraft] = useState("");
+  const [emptyBottleError, setEmptyBottleError] = useState("");
+  const [savingEmptyBottleCollect, setSavingEmptyBottleCollect] = useState(false);
   const lastHapticAtRef = useRef(0);
   const [mobileCashierNavOpen, setMobileCashierNavOpen] = useState(false);
   const [repBillingStep, setRepBillingStep] = useState("customer");
-  const [showPostSaleHomeButton, setShowPostSaleHomeButton] = useState(false);
 
   useEffect(() => {
     setMobileCashierNavOpen(false);
@@ -1211,37 +1311,190 @@ const CashierView = ({
     }, { qty: 0, amount: 0, goodQty: 0, damagedQty: 0 });
   }, [returnLinesDraft, returnSale]);
 
-  const quickAddCustomer = () => {
-    setCustomerDraft({ name: "", phone: "", address: "" });
-    setCustomerDraftError("");
-    setShowAddCustomer(true);
-  };
-
-  const saveQuickCustomer = async () => {
-    const name = customerDraft.name.trim();
-    const phone = customerDraft.phone.trim();
-    const address = customerDraft.address.trim();
-    if (!name || !phone || !address) {
-      setCustomerDraftError("Customer name, mobile, and address are required.");
-      return;
-    }
-    try {
-      setSavingCustomer(true);
-      await createCustomer({ name, phone, address });
-      setCustomerName(name);
-      setShowAddCustomer(false);
-    } catch (error) {
-      setCustomerDraftError(error.message);
-    } finally {
-      setSavingCustomer(false);
-    }
-  };
-
   const onReturnDraftChange = (productId, patch) => {
     setReturnLinesDraft((current) => ({
       ...current,
       [productId]: { quantity: current[productId]?.quantity || "", condition: current[productId]?.condition || "good", ...patch }
     }));
+  };
+
+  const preorderSale = useMemo(
+    () => state.sales.find((sale) => String(sale.id) === String(preorderSaleId).trim()) || null,
+    [state.sales, preorderSaleId]
+  );
+  const preorderCustomerOptions = useMemo(() => {
+    const rep = String(cashier || "").trim().toLowerCase();
+    const names = new Set(
+      (state.sales || [])
+        .filter((sale) => sale.orderType === "preorder" && sale.preOrderStatus === "pending" && String(sale.cashier || "").trim().toLowerCase() === rep)
+        .map((sale) => String(sale.customerName || "").trim())
+        .filter(Boolean)
+    );
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [state.sales, cashier]);
+  const filteredPreorderCustomerOptions = useMemo(() => {
+    const term = String(preorderCustomerName || "").trim().toLowerCase();
+    if (!term) return [];
+    return preorderCustomerOptions.filter((name) => name.toLowerCase().includes(term)).slice(0, 8);
+  }, [preorderCustomerName, preorderCustomerOptions]);
+  const preorderSalesForCustomer = useMemo(() => {
+    const rep = String(cashier || "").trim().toLowerCase();
+    const selected = String(preorderCustomerName || "").trim().toLowerCase();
+    if (!selected) return [];
+    return (state.sales || [])
+      .filter((sale) =>
+        sale.orderType === "preorder"
+        && sale.preOrderStatus === "pending"
+        && String(sale.cashier || "").trim().toLowerCase() === rep
+        && String(sale.customerName || "").trim().toLowerCase() === selected
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [state.sales, cashier, preorderCustomerName]);
+  const preorderDeliveredQty = (productId, orderedQty) => {
+    const draftVal = preorderDeliveredDraft[productId];
+    if (draftVal === undefined || draftVal === "") return orderedQty;
+    return Math.max(0, Math.min(orderedQty, Number(draftVal) || 0));
+  };
+  const preorderDeliveredLines = useMemo(() => {
+    if (!preorderSale) return [];
+    return (preorderSale.lines || [])
+      .map((line) => ({ ...line, quantity: preorderDeliveredQty(line.productId, Number(line.quantity || 0)) }))
+      .filter((line) => line.quantity > 0);
+  }, [preorderSale, preorderDeliveredDraft]);
+  const preorderDeliveredTotals = useMemo(
+    () => calculateTotals({
+      lines: preorderDeliveredLines,
+      taxRate: preorderSale?.taxRate ?? 0,
+      discount: preorderSale?.discountAmount ?? preorderSale?.discount ?? 0
+    }),
+    [preorderDeliveredLines, preorderSale]
+  );
+  const onPreorderDeliveredChange = (productId, value) => {
+    setPreorderDeliveredDraft((current) => ({ ...current, [productId]: value }));
+  };
+
+  const submitPreorderConfirm = async () => {
+    try {
+      const saleId = String(preorderSaleId || "").trim();
+      if (!saleId) {
+        setPreorderError("Select a pre-order bill.");
+        return;
+      }
+      if (!preorderSale) {
+        setPreorderError("Pre-order not found.");
+        return;
+      }
+      if (String(preorderSale.cashier || "").trim().toLowerCase() !== String(cashier || "").trim().toLowerCase()) {
+        setPreorderError(`Pre-order belongs to ${preorderSale.cashier || "another rep"}. You can confirm only your own pre-orders.`);
+        return;
+      }
+      if (!preorderDeliveredLines.length) {
+        setPreorderError("Enter at least one delivered quantity.");
+        return;
+      }
+      const payload = {
+        lines: (preorderSale.lines || []).map((line) => ({
+          productId: line.productId,
+          quantity: preorderDeliveredQty(line.productId, Number(line.quantity || 0))
+        })),
+        paymentMethod: preorderPaymentMethod
+      };
+      if (preorderPaymentMethod === "cash") {
+        payload.cashReceived = Number(preorderCashReceived || 0);
+      } else if (preorderPaymentMethod === "cheque") {
+        payload.chequeNo = preorderChequeNo.trim();
+        payload.chequeDate = preorderChequeDate;
+        payload.chequeBank = preorderChequeBank.trim();
+      }
+      setSavingPreorderConfirm(true);
+      setPreorderError("");
+      const confirmedSale = await confirmPreorder(saleId, payload);
+      setPreorderDeliveredDraft({});
+      setPreorderSaleId("");
+      setPreorderCustomerName("");
+      setPreorderCashReceived("");
+      setPreorderChequeNo("");
+      setPreorderChequeDate("");
+      setPreorderChequeBank("");
+      onSuccess?.(`Pre-order #${confirmedSale.id} confirmed.`);
+    } catch (error) {
+      setPreorderError(error.message);
+    } finally {
+      setSavingPreorderConfirm(false);
+    }
+  };
+
+  const emptyBottleSale = useMemo(
+    () => state.sales.find((sale) => String(sale.id) === String(emptyBottleSaleId).trim()) || null,
+    [state.sales, emptyBottleSaleId]
+  );
+  const emptyBottleCustomerOptions = useMemo(() => {
+    const rep = String(cashier || "").trim().toLowerCase();
+    const names = new Set(
+      (state.sales || [])
+        .filter((sale) => String(sale.cashier || "").trim().toLowerCase() === rep)
+        .filter((sale) => Number(sale.emptyBottlesOwed || 0) - Number(sale.emptyBottlesCollected || 0) > 0)
+        .map((sale) => String(sale.customerName || "").trim())
+        .filter(Boolean)
+    );
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [state.sales, cashier]);
+  const filteredEmptyBottleCustomerOptions = useMemo(() => {
+    const term = String(emptyBottleCustomerName || "").trim().toLowerCase();
+    if (!term) return [];
+    return emptyBottleCustomerOptions.filter((name) => name.toLowerCase().includes(term)).slice(0, 8);
+  }, [emptyBottleCustomerName, emptyBottleCustomerOptions]);
+  const emptyBottleSalesForCustomer = useMemo(() => {
+    const rep = String(cashier || "").trim().toLowerCase();
+    const selected = String(emptyBottleCustomerName || "").trim().toLowerCase();
+    if (!selected) return [];
+    return (state.sales || [])
+      .filter((sale) =>
+        String(sale.cashier || "").trim().toLowerCase() === rep
+        && String(sale.customerName || "").trim().toLowerCase() === selected
+        && Number(sale.emptyBottlesOwed || 0) > 0
+      )
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [state.sales, cashier, emptyBottleCustomerName]);
+  const emptyBottleOutstanding = Math.max(
+    0,
+    Number(emptyBottleSale?.emptyBottlesOwed || 0) - Number(emptyBottleSale?.emptyBottlesCollected || 0)
+  );
+
+  const submitEmptyBottleCollect = async () => {
+    try {
+      const saleId = String(emptyBottleSaleId || "").trim();
+      if (!saleId) {
+        setEmptyBottleError("Select a bill.");
+        return;
+      }
+      if (!emptyBottleSale) {
+        setEmptyBottleError("Bill not found.");
+        return;
+      }
+      if (String(emptyBottleSale.cashier || "").trim().toLowerCase() !== String(cashier || "").trim().toLowerCase()) {
+        setEmptyBottleError(`Bill belongs to ${emptyBottleSale.cashier || "another rep"}. You can collect only for your own bills.`);
+        return;
+      }
+      const quantity = Number(emptyBottleQtyDraft || 0);
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        setEmptyBottleError("Enter a quantity greater than 0.");
+        return;
+      }
+      if (quantity > emptyBottleOutstanding) {
+        setEmptyBottleError(`Cannot collect more than the outstanding empty bottles (${emptyBottleOutstanding} available).`);
+        return;
+      }
+      setSavingEmptyBottleCollect(true);
+      setEmptyBottleError("");
+      await collectEmptyBottles(saleId, { quantity });
+      setEmptyBottleQtyDraft("");
+      onSuccess?.(`Collected ${quantity} empty bottle(s) for #${saleId}.`);
+    } catch (error) {
+      setEmptyBottleError(error.message);
+    } finally {
+      setSavingEmptyBottleCollect(false);
+    }
   };
 
   const submitReturnFromSale = async () => {
@@ -1383,7 +1636,7 @@ const CashierView = ({
   };
 
   const openSaleEdit = (sale) => {
-    const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length);
+    const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length) || Boolean(sale?.preOrderConfirmedAt);
     const hasReturns = (state.returns || []).some((ret) => String(ret.saleId) === String(sale?.id));
     if (hasDeliveryProcessing) {
       setNotice("This bill cannot be edited after delivery processing has started.");
@@ -1418,38 +1671,38 @@ const CashierView = ({
           price: lineFinalPrice(line)
         }))
         .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
-        if (!editingSaleId || !lines.length) {
-          setSaleEditError("Keep at least one item in bill.");
-          return;
-        }
-        const billDiscount = Math.max(0, Number(saleEditBillDiscount || 0) || 0);
-        if (billDiscount > saleEditSubTotal) {
-          setSaleEditError(`Total bill discount cannot exceed subtotal (${currency(saleEditSubTotal)}).`);
-          return;
-        }
-        const saleBeingEdited = (state.sales || []).find((sale) => String(sale.id) === String(editingSaleId));
-        const discountLimit = (state.customers || [])
-          .filter((item) => String(item.name || "").trim().toLowerCase() === String(saleBeingEdited?.customerName || "").trim().toLowerCase())
-          .reduce((max, item) => Math.max(max, Number(item.discountLimit || 0)), 0);
-        const bundleDiscountLimit = (state.customers || [])
-          .filter((item) => String(item.name || "").trim().toLowerCase() === String(saleBeingEdited?.customerName || "").trim().toLowerCase())
-          .reduce((max, item) => Math.max(max, Number(item.bundleDiscountLimit || 0)), 0);
-        const totalDiscount = totalDiscountApplied({ lines, billDiscount });
-        if (discountLimit > 0 && totalDiscount > discountLimit) {
-          setSaleEditError(`Customer discount limit is ${currency(discountLimit)}. Current discount is ${currency(totalDiscount)}.`);
-          return;
-        }
-        const bundleDiscountViolation = findBundleDiscountViolation({ lines, bundleDiscountLimit });
-        if (bundleDiscountViolation) {
-          setSaleEditError(`${bundleDiscountViolation.lineName} exceeds bundle discount limit. Allowed: ${currency(bundleDiscountViolation.allowedBundleDiscount)} for ${bundleDiscountViolation.fullBundles} bundle(s).`);
-          return;
-        }
-        setSavingSaleEdit(true);
-        setSaleEditError("");
+      if (!editingSaleId || !lines.length) {
+        setSaleEditError("Keep at least one item in bill.");
+        return;
+      }
+      const billDiscount = Math.max(0, Number(saleEditBillDiscount || 0) || 0);
+      if (billDiscount > saleEditSubTotal) {
+        setSaleEditError(`Total bill discount cannot exceed subtotal (${currency(saleEditSubTotal)}).`);
+        return;
+      }
+      const saleBeingEdited = (state.sales || []).find((sale) => String(sale.id) === String(editingSaleId));
+      const discountLimit = (state.customers || [])
+        .filter((item) => String(item.name || "").trim().toLowerCase() === String(saleBeingEdited?.customerName || "").trim().toLowerCase())
+        .reduce((max, item) => Math.max(max, Number(item.discountLimit || 0)), 0);
+      const bundleDiscountLimit = (state.customers || [])
+        .filter((item) => String(item.name || "").trim().toLowerCase() === String(saleBeingEdited?.customerName || "").trim().toLowerCase())
+        .reduce((max, item) => Math.max(max, Number(item.bundleDiscountLimit || 0)), 0);
+      const totalDiscount = totalDiscountApplied({ lines, billDiscount });
+      if (discountLimit > 0 && totalDiscount > discountLimit) {
+        setSaleEditError(`Customer discount limit is ${currency(discountLimit)}. Current discount is ${currency(totalDiscount)}.`);
+        return;
+      }
+      const bundleDiscountViolation = findBundleDiscountViolation({ lines, bundleDiscountLimit });
+      if (bundleDiscountViolation) {
+        setSaleEditError(`${bundleDiscountViolation.lineName} exceeds bundle discount limit. Allowed: ${currency(bundleDiscountViolation.allowedBundleDiscount)} for ${bundleDiscountViolation.fullBundles} bundle(s).`);
+        return;
+      }
+      setSavingSaleEdit(true);
+      setSaleEditError("");
       await patchSale(editingSaleId, { lines, paymentType: saleEditPaymentType, discount: billDiscount });
-        closeSaleEdit();
-      } catch (error) {
-        setSaleEditError(error.message);
+      closeSaleEdit();
+    } catch (error) {
+      setSaleEditError(error.message);
     } finally {
       setSavingSaleEdit(false);
     }
@@ -1484,7 +1737,7 @@ const CashierView = ({
     try {
       const saleCashier = String(sale?.cashier || "").trim().toLowerCase();
       const actingRep = String(cashier || "").trim().toLowerCase();
-      const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length);
+      const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length) || Boolean(sale?.preOrderConfirmedAt);
       if (!sale || !saleCashier || saleCashier !== actingRep) {
         setNotice("You can delete only your own bills.");
         return;
@@ -1502,12 +1755,12 @@ const CashierView = ({
       if (!ok) return;
       await deleteSale(sale.id);
       onSaleDeleted?.(sale.id);
-        if (String(editingSaleId || "") === String(sale.id)) {
-          setEditingSaleId("");
-          setSaleEditPaymentType(PAYMENT_TYPES[0]);
-          setSaleEditLines([]);
-          setSaleEditError("");
-        }
+      if (String(editingSaleId || "") === String(sale.id)) {
+        setEditingSaleId("");
+        setSaleEditPaymentType(PAYMENT_TYPES[0]);
+        setSaleEditLines([]);
+        setSaleEditError("");
+      }
       setNotice(`Sale #${sale.id} deleted.`);
     } catch (error) {
       setNotice(error.message);
@@ -1546,6 +1799,8 @@ const CashierView = ({
       <aside id="cashier-sidebar-nav" className={`cashier-mobile-sidebar ${mobileCashierNavOpen ? "open" : ""} ${billingFocusMode ? "billing-focus-mode" : ""}`}>
         <button type="button" className={`cashier-nav-billing ${cashierPage === "billing" ? "active" : ""}`} onClick={() => setCashierPage("billing")}><span className="nav-emoji" aria-hidden="true">📝</span>Billing</button>
         <button type="button" className={`cashier-nav-returns ${cashierPage === "returns" ? "active" : ""}`} onClick={() => setCashierPage("returns")}><span className="nav-emoji" aria-hidden="true">↩️</span>Returns</button>
+        <button type="button" className={`cashier-nav-preorders ${cashierPage === "deliverPreorders" ? "active" : ""}`} onClick={() => setCashierPage("deliverPreorders")}><span className="nav-emoji" aria-hidden="true">🚚</span>Deliver Pre-Orders</button>
+        <button type="button" className={`cashier-nav-empty-bottles ${cashierPage === "emptyBottles" ? "active" : ""}`} onClick={() => setCashierPage("emptyBottles")}><span className="nav-emoji" aria-hidden="true">🍾</span>Empty Bottles</button>
         <button type="button" className={`cashier-nav-sales ${cashierPage === "sales" ? "active" : ""}`} onClick={() => setCashierPage("sales")}><span className="nav-emoji" aria-hidden="true">📊</span>Sales</button>
         <button type="button" className={`cashier-nav-stock ${cashierPage === "stock" ? "active" : ""}`} onClick={() => setCashierPage("stock")}><span className="nav-emoji" aria-hidden="true">📦</span>Stock</button>
         <button type="button" className={`cashier-nav-customers ${cashierPage === "customers" ? "active" : ""}`} onClick={() => setCashierPage("customers")}><span className="nav-emoji" aria-hidden="true">👥</span>Customers</button>
@@ -1559,6 +1814,8 @@ const CashierView = ({
       <div className={`cashier-tabs ${billingFocusMode ? "billing-focus-mode" : ""}`}>
         <button type="button" className={`cashier-nav-billing ${cashierPage === "billing" ? "active" : ""}`} onClick={() => setCashierPage("billing")}><span className="nav-emoji" aria-hidden="true">📝</span>Billing</button>
         <button type="button" className={`cashier-nav-returns ${cashierPage === "returns" ? "active" : ""}`} onClick={() => setCashierPage("returns")}><span className="nav-emoji" aria-hidden="true">↩️</span>Returns</button>
+        <button type="button" className={`cashier-nav-preorders ${cashierPage === "deliverPreorders" ? "active" : ""}`} onClick={() => setCashierPage("deliverPreorders")}><span className="nav-emoji" aria-hidden="true">🚚</span>Deliver Pre-Orders</button>
+        <button type="button" className={`cashier-nav-empty-bottles ${cashierPage === "emptyBottles" ? "active" : ""}`} onClick={() => setCashierPage("emptyBottles")}><span className="nav-emoji" aria-hidden="true">🍾</span>Empty Bottles</button>
         <button type="button" className={`cashier-nav-sales ${cashierPage === "sales" ? "active" : ""}`} onClick={() => setCashierPage("sales")}><span className="nav-emoji" aria-hidden="true">📊</span>Sales</button>
         <button type="button" className={`cashier-nav-stock ${cashierPage === "stock" ? "active" : ""}`} onClick={() => setCashierPage("stock")}><span className="nav-emoji" aria-hidden="true">📦</span>Stock</button>
         <button type="button" className={`cashier-nav-customers ${cashierPage === "customers" ? "active" : ""}`} onClick={() => setCashierPage("customers")}><span className="nav-emoji" aria-hidden="true">👥</span>Customers</button>
@@ -1583,6 +1840,7 @@ const CashierView = ({
                 </span>
                 <span className="menu-toggle-label">{mobileCashierNavOpen ? "Close" : "Menu"}</span>
               </button>
+              <button type="button" className="rep-billing-logout-btn" onClick={onLogout}>Log Out</button>
             </div>
             <div className="rep-wizard-head">
               <div>
@@ -1596,6 +1854,28 @@ const CashierView = ({
               </div>
             </div>
 
+            <div className="rep-mode-toggle" role="group" aria-label="Billing mode">
+              <button
+                type="button"
+                className={`rep-mode-toggle-btn ${!isPreOrderMode ? "active" : ""}`}
+                onClick={() => setIsPreOrderMode(false)}
+                disabled={cart.length > 0}
+              >
+                Billing
+              </button>
+              <button
+                type="button"
+                className={`rep-mode-toggle-btn ${isPreOrderMode ? "active" : ""}`}
+                onClick={() => setIsPreOrderMode(true)}
+                disabled={cart.length > 0}
+              >
+                Pre-Order
+              </button>
+            </div>
+            {isPreOrderMode ? (
+              <p className="form-hint rep-mode-toggle-hint">Pre-order mode: stock is reserved, not deducted, until the order is delivered and confirmed.</p>
+            ) : null}
+
             <div className="rep-wizard-progress">
               {repBillingSteps.map((step, index) => (
                 <button
@@ -1603,7 +1883,7 @@ const CashierView = ({
                   type="button"
                   className={`rep-wizard-step ${repBillingStep === step.key ? "active" : ""} ${index < repBillingStepIndex ? "done" : ""}`}
                   onClick={() => {
-                    if (step.key === "items" && !customerName.trim()) return;
+                    if (step.key === "items" && !selectedSavedCustomer) return;
                     if (step.key === "cart" && !cart.length) return;
                     if (step.key === "checkout" && !cart.length) return;
                     setRepBillingStep(step.key);
@@ -1625,16 +1905,20 @@ const CashierView = ({
                       <span>{customerName.trim() || "Select Customer"}</span>
                       <strong>Open</strong>
                     </button>
-                    <div className="rep-step-actions-inline">
-                      <button type="button" className="ghost" onClick={quickAddCustomer}>Add New Customer</button>
-                    </div>
                     {customerName.trim() ? (
                       <div className="rep-customer-focus-card rep-customer-focus-inline">
                         <strong>{customerName}</strong>
-                        <p>Outstanding: {currency(selectedCustomerOutstanding)}</p>
-                        {selectedCustomerDiscountLimit > 0 ? <p>Discount Limit: {currency(selectedCustomerDiscountLimit)}</p> : null}
-                        {selectedCustomerBundleDiscountLimit > 0 ? <p>Bundle Limit: {currency(selectedCustomerBundleDiscountLimit)} per bundle</p> : null}
-                        {selectedSavedCustomer?.phone ? <p>Phone: {selectedSavedCustomer.phone}</p> : null}
+                        {selectedSavedCustomer ? (
+                          <>
+                            <p>Outstanding: {currency(selectedCustomerOutstanding)}</p>
+                            {selectedCustomerCreditLimit > 0 ? <p>Credit Limit: {currency(selectedCustomerCreditLimit)}</p> : null}
+                            {selectedCustomerDiscountLimit > 0 ? <p>Discount Limit: {currency(selectedCustomerDiscountLimit)}</p> : null}
+                            {selectedCustomerBundleDiscountLimit > 0 ? <p>Bundle Limit: {currency(selectedCustomerBundleDiscountLimit)} per bundle</p> : null}
+                            {selectedSavedCustomer?.phone ? <p>Phone: {selectedSavedCustomer.phone}</p> : null}
+                          </>
+                        ) : (
+                          <p className="outstanding-text">Select an existing saved customer from the list.</p>
+                        )}
                       </div>
                     ) : (
                       <p className="form-hint">No customer selected yet.</p>
@@ -1745,7 +2029,7 @@ const CashierView = ({
                         </div>
                       </article>
                     ))}
-                    {cart.length === 0 ? <p className="form-hint" style={{textAlign: 'center', marginTop: '2rem'}}>Cart is empty.</p> : null}
+                    {cart.length === 0 ? <p className="form-hint" style={{ textAlign: 'center', marginTop: '2rem' }}>Cart is empty.</p> : null}
                   </div>
 
                   {cart.length > 0 && (
@@ -1859,6 +2143,7 @@ const CashierView = ({
                     <div className="form-grid rep-checkout-form rep-checkout-form-steps">
                       <p className="form-hint">Cashier: {cashier || "-"}</p>
                       {customerName.trim() ? <p className="form-hint outstanding-text">Outstanding: {currency(selectedCustomerOutstanding)}</p> : null}
+                      {customerName.trim() && selectedCustomerCreditLimit > 0 ? <p className="form-hint">Credit Limit: {currency(selectedCustomerCreditLimit)}</p> : null}
                       {customerName.trim() && selectedCustomerDiscountLimit > 0 ? <p className="form-hint">Discount Limit: {currency(selectedCustomerDiscountLimit)}</p> : null}
                       {customerName.trim() && selectedCustomerBundleDiscountLimit > 0 ? <p className="form-hint">Bundle Discount Limit: {currency(selectedCustomerBundleDiscountLimit)} per bundle</p> : null}
                       {customerName.trim() && selectedCustomerDiscountLimit > 0 && cartDiscountTotal > selectedCustomerDiscountLimit ? (
@@ -1943,44 +2228,44 @@ const CashierView = ({
 
             {repBillingStep !== "cart" ? (
               <div className="rep-wizard-footer">
-              <div className="rep-wizard-footer-copy">
-                <strong>{repBillingSteps[repBillingStepIndex]?.label}</strong>
-                <p>{customerName ? `${customerName} • ${cart.length} item(s)` : "Follow each step to finish the bill."}</p>
-              </div>
-              <div className="rep-wizard-footer-actions">
-                {repBillingStep !== "customer" ? (
-                  <button
-                    type="button"
-                    className="ghost rep-nav-circle rep-nav-circle-back"
-                    onClick={() => setRepBillingStep(repBillingSteps[Math.max(0, repBillingStepIndex - 1)].key)}
-                    aria-label="Back"
-                  >
-                    <span className="rep-nav-action-icon" aria-hidden="true">{"<"}</span>
-                  </button>
-                ) : (
-                  <span className="rep-nav-placeholder" aria-hidden="true" />
-                )}
+                <div className="rep-wizard-footer-copy">
+                  <strong>{repBillingSteps[repBillingStepIndex]?.label}</strong>
+                  <p>{customerName ? `${customerName} • ${cart.length} item(s)` : "Follow each step to finish the bill."}</p>
+                </div>
+                <div className="rep-wizard-footer-actions">
+                  {repBillingStep !== "customer" ? (
+                    <button
+                      type="button"
+                      className="ghost rep-nav-circle rep-nav-circle-back"
+                      onClick={() => setRepBillingStep(repBillingSteps[Math.max(0, repBillingStepIndex - 1)].key)}
+                      aria-label="Back"
+                    >
+                      <span className="rep-nav-action-icon" aria-hidden="true">{"<"}</span>
+                    </button>
+                  ) : (
+                    <span className="rep-nav-placeholder" aria-hidden="true" />
+                  )}
 
-                {repBillingStep === "customer" ? (
-                  <button type="button" className="rep-nav-circle rep-nav-circle-next" aria-label="Next" onClick={() => setRepBillingStep("items")} disabled={!customerName.trim()}>
-                    <span className="rep-nav-action-icon" aria-hidden="true">{">"}</span>
-                  </button>
-                ) : null}
-                {repBillingStep === "items" ? (
-                  <button type="button" className="rep-nav-circle rep-nav-circle-next" aria-label="Next" onClick={() => setRepBillingStep("cart")} disabled={!cart.length}>
-                    <span className="rep-nav-action-icon" aria-hidden="true">{">"}</span>
-                  </button>
-                ) : null}
-                {repBillingStep === "checkout" ? (
-                  <button className="checkout rep-nav-action rep-nav-action-complete" type="button" onClick={checkout} disabled={!cart.length || savingCheckout}>
-                    <span>{savingCheckout ? "Wait..." : "Done"}</span>
-                    <span className="rep-nav-action-icon" aria-hidden="true">✓</span>
-                  </button>
-                ) : null}
+                  {repBillingStep === "customer" ? (
+                    <button type="button" className="rep-nav-circle rep-nav-circle-next" aria-label="Next" onClick={() => setRepBillingStep("items")} disabled={!selectedSavedCustomer}>
+                      <span className="rep-nav-action-icon" aria-hidden="true">{">"}</span>
+                    </button>
+                  ) : null}
+                  {repBillingStep === "items" ? (
+                    <button type="button" className="rep-nav-circle rep-nav-circle-next" aria-label="Next" onClick={() => setRepBillingStep("cart")} disabled={!cart.length}>
+                      <span className="rep-nav-action-icon" aria-hidden="true">{">"}</span>
+                    </button>
+                  ) : null}
+                  {repBillingStep === "checkout" ? (
+                    <button className="checkout rep-nav-action rep-nav-action-complete" type="button" onClick={checkout} disabled={!cart.length || savingCheckout}>
+                      <span>{savingCheckout ? "Wait..." : "Done"}</span>
+                      <span className="rep-nav-action-icon" aria-hidden="true">✓</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ) : null}
-        </section>
+            ) : null}
+          </section>
           {cart.length && repBillingStep !== "cart" ? (
             <button type="button" className="rep-cart-fab" onClick={() => setShowCartPopup(true)} aria-label="Open cart">
               <span>{cart.length}</span>
@@ -2044,79 +2329,79 @@ const CashierView = ({
             {!returnSaleId ? <p className="form-hint">Select customer then bill, or type Sale ID manually to load bill items.</p> : null}
             {returnSaleId && !returnSale ? <p className="form-hint">Sale not found.</p> : null}
             {returnSale ? (
-                <>
-                  <article className="list-row">
-                    <div>
-                      <strong>Sale #{returnSale.id}</strong>
-                      <p>{new Date(returnSale.createdAt).toLocaleString()}</p>
-                      <p>{returnSale.customerName} • {returnSale.lorry || "-"}</p>
-                    </div>
-                    <strong>{currency(saleNetTotal(returnSale))}</strong>
-                  </article>
-                  <div className="return-draft-summary">
-                    <article>
-                      <span>Selected Qty</span>
-                      <strong>{returnDraftSummary.qty}</strong>
-                    </article>
-                    <article>
-                      <span>Good Returns</span>
-                      <strong>{returnDraftSummary.goodQty}</strong>
-                    </article>
-                    <article>
-                      <span>Damaged Returns</span>
-                      <strong>{returnDraftSummary.damagedQty}</strong>
-                    </article>
-                    <article className="return-draft-summary-amount">
-                      <span>Return Credit</span>
-                      <strong>{currency(returnDraftSummary.amount)}</strong>
-                    </article>
+              <>
+                <article className="list-row">
+                  <div>
+                    <strong>Sale #{returnSale.id}</strong>
+                    <p>{new Date(returnSale.createdAt).toLocaleString()}</p>
+                    <p>{returnSale.customerName} • {returnSale.lorry || "-"}</p>
                   </div>
-                  <div className="list">
-                    {(returnSale.lines || []).map((line) => {
-                      const sold = Number(line.quantity || 0);
-                      const returned = Number(returnedQtyByProduct.get(line.productId) || 0);
-                      const alreadyNotDelivered = Number(
-                        (returnSale.deliveryAdjustments || []).reduce((acc, adjustment) => (
-                          acc + (adjustment.lines || [])
-                            .filter((item) => String(item.productId) === String(line.productId))
-                            .reduce((lineAcc, item) => lineAcc + Number(item.quantity || 0), 0)
-                        ), 0)
-                      );
-                      const soldEffective = Math.max(0, sold - alreadyNotDelivered);
-                      const draft = returnLinesDraft[line.productId] || { quantity: "", condition: "good" };
-                      const draftQty = Number(draft.quantity || 0);
-                      const remainingBeforeDraft = Math.max(0, sold - returned - alreadyNotDelivered);
-                      const remainingLive = Math.max(0, sold - returned - alreadyNotDelivered - (Number.isFinite(draftQty) ? draftQty : 0));
-                      const preview = returnLinePreview(returnSale, line, Number.isFinite(draftQty) ? draftQty : 0);
-                      const lineHasItemDiscount = Number(lineItemDiscount(line) || 0) > 0;
-                      const lineHasBillDiscount = Number(returnSale.discountAmount || returnSale.discount || 0) > 0;
-                      return (
-                        <article key={line.productId} className="list-row return-line-card">
-                            <div className="return-line-main">
-                              <strong>{line.name}</strong>
-                              <p>Ordered {sold} • Not Delivered {alreadyNotDelivered} • Sold {soldEffective} • Returned {returned} • Remaining {remainingLive}</p>
-                              <p>Sold unit value {currency(line.price || 0)}</p>
-                              {draftQty > 0 ? (
-                                <p className="return-line-discount-note">
-                                  Proportional bill discount {currency(preview.billDiscountShare || 0)}
-                                </p>
-                              ) : null}
-                              {lineHasItemDiscount || lineHasBillDiscount ? (
-                                <p className="return-line-discount-note">
-                                  {lineHasItemDiscount ? `Item discount applied${lineHasBillDiscount ? " • " : ""}` : ""}
-                                  {lineHasBillDiscount ? "Bill discount shared proportionally" : ""}
-                                </p>
-                            ) : null}
-                            {draftQty > 0 ? (
-                              <p className="return-line-credit">
-                                Return credit {currency(preview.returnAmount)}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="return-line-controls">
-                            <input type="number" min="0" max={remainingBeforeDraft} value={draft.quantity} onChange={(e) => onReturnDraftChange(line.productId, { quantity: e.target.value })} placeholder="Qty" />
-                            <select value={draft.condition} onChange={(e) => onReturnDraftChange(line.productId, { condition: e.target.value })}>
-                              <option value="good">Good</option>
+                  <strong>{currency(saleNetTotal(returnSale))}</strong>
+                </article>
+                <div className="return-draft-summary">
+                  <article>
+                    <span>Selected Qty</span>
+                    <strong>{returnDraftSummary.qty}</strong>
+                  </article>
+                  <article>
+                    <span>Good Returns</span>
+                    <strong>{returnDraftSummary.goodQty}</strong>
+                  </article>
+                  <article>
+                    <span>Damaged Returns</span>
+                    <strong>{returnDraftSummary.damagedQty}</strong>
+                  </article>
+                  <article className="return-draft-summary-amount">
+                    <span>Return Credit</span>
+                    <strong>{currency(returnDraftSummary.amount)}</strong>
+                  </article>
+                </div>
+                <div className="list">
+                  {(returnSale.lines || []).map((line) => {
+                    const sold = Number(line.quantity || 0);
+                    const returned = Number(returnedQtyByProduct.get(line.productId) || 0);
+                    const alreadyNotDelivered = Number(
+                      (returnSale.deliveryAdjustments || []).reduce((acc, adjustment) => (
+                        acc + (adjustment.lines || [])
+                          .filter((item) => String(item.productId) === String(line.productId))
+                          .reduce((lineAcc, item) => lineAcc + Number(item.quantity || 0), 0)
+                      ), 0)
+                    );
+                    const soldEffective = Math.max(0, sold - alreadyNotDelivered);
+                    const draft = returnLinesDraft[line.productId] || { quantity: "", condition: "good" };
+                    const draftQty = Number(draft.quantity || 0);
+                    const remainingBeforeDraft = Math.max(0, sold - returned - alreadyNotDelivered);
+                    const remainingLive = Math.max(0, sold - returned - alreadyNotDelivered - (Number.isFinite(draftQty) ? draftQty : 0));
+                    const preview = returnLinePreview(returnSale, line, Number.isFinite(draftQty) ? draftQty : 0);
+                    const lineHasItemDiscount = Number(lineItemDiscount(line) || 0) > 0;
+                    const lineHasBillDiscount = Number(returnSale.discountAmount || returnSale.discount || 0) > 0;
+                    return (
+                      <article key={line.productId} className="list-row return-line-card">
+                        <div className="return-line-main">
+                          <strong>{line.name}</strong>
+                          <p>Ordered {sold} • Not Delivered {alreadyNotDelivered} • Sold {soldEffective} • Returned {returned} • Remaining {remainingLive}</p>
+                          <p>Sold unit value {currency(line.price || 0)}</p>
+                          {draftQty > 0 ? (
+                            <p className="return-line-discount-note">
+                              Proportional bill discount {currency(preview.billDiscountShare || 0)}
+                            </p>
+                          ) : null}
+                          {lineHasItemDiscount || lineHasBillDiscount ? (
+                            <p className="return-line-discount-note">
+                              {lineHasItemDiscount ? `Item discount applied${lineHasBillDiscount ? " • " : ""}` : ""}
+                              {lineHasBillDiscount ? "Bill discount shared proportionally" : ""}
+                            </p>
+                          ) : null}
+                          {draftQty > 0 ? (
+                            <p className="return-line-credit">
+                              Return credit {currency(preview.returnAmount)}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="return-line-controls">
+                          <input type="number" min="0" max={remainingBeforeDraft} value={draft.quantity} onChange={(e) => onReturnDraftChange(line.productId, { quantity: e.target.value })} placeholder="Qty" />
+                          <select value={draft.condition} onChange={(e) => onReturnDraftChange(line.productId, { condition: e.target.value })}>
+                            <option value="good">Good</option>
                             <option value="damaged">Expired / Damaged</option>
                           </select>
                         </div>
@@ -2126,6 +2411,256 @@ const CashierView = ({
                 </div>
                 {returnError ? <p className="form-hint">{returnError}</p> : null}
                 <button type="button" onClick={submitReturnFromSale} disabled={savingReturn}>{savingReturn ? "Saving Return..." : "Submit Return"}</button>
+              </>
+            ) : null}
+          </section>
+        </main>
+      ) : null}
+
+      {cashierPage === "deliverPreorders" ? (
+        <main className="grid">
+          <section className="panel">
+            <h2>Deliver Pre-Orders</h2>
+            <div className="form-grid">
+              <p className="form-hint">Rep: {cashier || "-"}</p>
+              <input
+                value={preorderCustomerName}
+                onChange={(e) => {
+                  setPreorderCustomerName(e.target.value);
+                  setShowPreorderCustomerSuggestions(true);
+                  setPreorderSaleId("");
+                  setPreorderDeliveredDraft({});
+                  setPreorderError("");
+                }}
+                onFocus={() => setShowPreorderCustomerSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowPreorderCustomerSuggestions(false), 120)}
+                placeholder="Type customer name"
+              />
+              {showPreorderCustomerSuggestions && filteredPreorderCustomerOptions.length ? (
+                <div className="customer-suggestions">
+                  {filteredPreorderCustomerOptions.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => {
+                        setPreorderCustomerName(name);
+                        setShowPreorderCustomerSuggestions(false);
+                        setPreorderSaleId("");
+                        setPreorderDeliveredDraft({});
+                        setPreorderError("");
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <select
+                value={preorderSaleId}
+                onChange={(e) => { setPreorderSaleId(e.target.value); setPreorderDeliveredDraft({}); setPreorderError(""); }}
+                disabled={!preorderCustomerName.trim()}
+              >
+                <option value="">{preorderCustomerName.trim() ? "Select pre-order (Sale ID)" : "Select customer first"}</option>
+                {preorderSalesForCustomer.map((sale) => (
+                  <option key={sale.id} value={sale.id}>
+                    #{sale.id} • {new Date(sale.createdAt).toLocaleDateString()} • {currency(sale.total || 0)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {!preorderSaleId ? <p className="form-hint">Select customer then pre-order bill.</p> : null}
+            {preorderSaleId && !preorderSale ? <p className="form-hint">Pre-order not found.</p> : null}
+            {preorderSale ? (
+              <>
+                <article className="list-row">
+                  <div>
+                    <strong>Pre-Order #{preorderSale.id}</strong>
+                    <p>{new Date(preorderSale.createdAt).toLocaleString()}</p>
+                    <p>{preorderSale.customerName} • {preorderSale.lorry || "-"}</p>
+                  </div>
+                  <strong>{currency(preorderSale.total || 0)}</strong>
+                </article>
+                <div className="list">
+                  {(preorderSale.lines || []).map((line) => {
+                    const orderedQty = Number(line.quantity || 0);
+                    const draftVal = preorderDeliveredDraft[line.productId];
+                    const deliveredQty = preorderDeliveredQty(line.productId, orderedQty);
+                    const shortQty = Math.max(0, orderedQty - deliveredQty);
+                    return (
+                      <article key={line.productId} className="list-row return-line-card">
+                        <div className="return-line-main">
+                          <strong>{line.name}</strong>
+                          <p>Ordered {orderedQty}{shortQty > 0 ? ` • Short ${shortQty}` : ""}</p>
+                          <p>Unit price {currency(line.price || 0)}</p>
+                        </div>
+                        <div className="return-line-controls">
+                          <input
+                            type="number"
+                            min="0"
+                            max={orderedQty}
+                            value={draftVal === undefined ? orderedQty : draftVal}
+                            onChange={(e) => onPreorderDeliveredChange(line.productId, e.target.value)}
+                            placeholder="Delivered qty"
+                          />
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                <div className="return-draft-summary">
+                  <article className="return-draft-summary-amount">
+                    <span>Delivered Total</span>
+                    <strong>{currency(preorderDeliveredTotals.total)}</strong>
+                  </article>
+                </div>
+                <div className="form-grid">
+                  <label className="form-hint">Payment Method</label>
+                  <select value={preorderPaymentMethod} onChange={(e) => setPreorderPaymentMethod(e.target.value)}>
+                    <option value="cash">Cash</option>
+                    <option value="credit">Credit</option>
+                    <option value="cheque">Cheque</option>
+                  </select>
+                  {preorderPaymentMethod === "cash" ? (
+                    <>
+                      <label className="form-hint">Cash Received</label>
+                      <div className="checkout-inline-action">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={preorderCashReceived}
+                          onChange={(e) => setPreorderCashReceived(e.target.value)}
+                          placeholder="Amount received"
+                        />
+                        <button type="button" className="ghost" onClick={() => setPreorderCashReceived(String(preorderDeliveredTotals.total))}>
+                          Full Amount
+                        </button>
+                      </div>
+                      <p className="form-hint">Any shortfall becomes outstanding for this customer.</p>
+                    </>
+                  ) : null}
+                  {preorderPaymentMethod === "cheque" ? (
+                    <>
+                      <label className="form-hint">Cheque No</label>
+                      <input value={preorderChequeNo} onChange={(e) => setPreorderChequeNo(e.target.value)} placeholder="Cheque number" />
+                      <label className="form-hint">Cheque Date</label>
+                      <input type="date" value={preorderChequeDate} onChange={(e) => setPreorderChequeDate(e.target.value)} />
+                      <label className="form-hint">Bank</label>
+                      <input value={preorderChequeBank} onChange={(e) => setPreorderChequeBank(e.target.value)} placeholder="Bank name" />
+                    </>
+                  ) : null}
+                  {preorderPaymentMethod === "credit" ? (
+                    <p className="form-hint">Full delivered amount will be recorded as outstanding for this customer.</p>
+                  ) : null}
+                </div>
+                {preorderError ? <p className="form-hint">{preorderError}</p> : null}
+                <button type="button" onClick={submitPreorderConfirm} disabled={savingPreorderConfirm}>
+                  {savingPreorderConfirm ? "Confirming..." : "Confirm Pre-Order"}
+                </button>
+              </>
+            ) : null}
+          </section>
+        </main>
+      ) : null}
+
+      {cashierPage === "emptyBottles" ? (
+        <main className="grid">
+          <section className="panel">
+            <h2>Empty Bottles</h2>
+            <div className="form-grid">
+              <p className="form-hint">Rep: {cashier || "-"}</p>
+              <input
+                value={emptyBottleCustomerName}
+                onChange={(e) => {
+                  setEmptyBottleCustomerName(e.target.value);
+                  setShowEmptyBottleCustomerSuggestions(true);
+                  setEmptyBottleSaleId("");
+                  setEmptyBottleQtyDraft("");
+                  setEmptyBottleError("");
+                }}
+                onFocus={() => setShowEmptyBottleCustomerSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowEmptyBottleCustomerSuggestions(false), 120)}
+                placeholder="Type customer name"
+              />
+              {showEmptyBottleCustomerSuggestions && filteredEmptyBottleCustomerOptions.length ? (
+                <div className="customer-suggestions">
+                  {filteredEmptyBottleCustomerOptions.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => {
+                        setEmptyBottleCustomerName(name);
+                        setShowEmptyBottleCustomerSuggestions(false);
+                        setEmptyBottleSaleId("");
+                        setEmptyBottleQtyDraft("");
+                        setEmptyBottleError("");
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <select
+                value={emptyBottleSaleId}
+                onChange={(e) => { setEmptyBottleSaleId(e.target.value); setEmptyBottleQtyDraft(""); setEmptyBottleError(""); }}
+                disabled={!emptyBottleCustomerName.trim()}
+              >
+                <option value="">{emptyBottleCustomerName.trim() ? "Select bill (Sale ID)" : "Select customer first"}</option>
+                {emptyBottleSalesForCustomer.map((sale) => {
+                  const owed = Number(sale.emptyBottlesOwed || 0);
+                  const collected = Number(sale.emptyBottlesCollected || 0);
+                  const outstanding = Math.max(0, owed - collected);
+                  return (
+                    <option key={sale.id} value={sale.id}>
+                      #{sale.id} • {new Date(sale.createdAt).toLocaleDateString()} • Owed {owed} • Outstanding {outstanding}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            {!emptyBottleSaleId ? <p className="form-hint">Select customer then bill.</p> : null}
+            {emptyBottleSaleId && !emptyBottleSale ? <p className="form-hint">Bill not found.</p> : null}
+            {emptyBottleSale ? (
+              <>
+                <article className="list-row">
+                  <div>
+                    <strong>Bill #{emptyBottleSale.id}</strong>
+                    <p>{new Date(emptyBottleSale.createdAt).toLocaleString()}</p>
+                    <p>{emptyBottleSale.customerName} • {emptyBottleSale.lorry || "-"}</p>
+                  </div>
+                </article>
+                <div className="return-draft-summary">
+                  <article>
+                    <span>Owed</span>
+                    <strong>{Number(emptyBottleSale.emptyBottlesOwed || 0)}</strong>
+                  </article>
+                  <article>
+                    <span>Collected</span>
+                    <strong>{Number(emptyBottleSale.emptyBottlesCollected || 0)}</strong>
+                  </article>
+                  <article className="return-draft-summary-amount">
+                    <span>Outstanding</span>
+                    <strong>{emptyBottleOutstanding}</strong>
+                  </article>
+                </div>
+                <div className="form-grid">
+                  <label className="form-hint">Collect Empty Bottles</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={emptyBottleOutstanding}
+                    value={emptyBottleQtyDraft}
+                    onChange={(e) => setEmptyBottleQtyDraft(e.target.value)}
+                    placeholder="Quantity collected"
+                    disabled={emptyBottleOutstanding <= 0}
+                  />
+                  {emptyBottleOutstanding <= 0 ? <p className="form-hint">All empty bottles collected for this bill.</p> : null}
+                </div>
+                {emptyBottleError ? <p className="form-hint">{emptyBottleError}</p> : null}
+                <button type="button" onClick={submitEmptyBottleCollect} disabled={savingEmptyBottleCollect || emptyBottleOutstanding <= 0}>
+                  {savingEmptyBottleCollect ? "Saving..." : "Collect Empty Bottles"}
+                </button>
               </>
             ) : null}
           </section>
@@ -2205,7 +2740,7 @@ const CashierView = ({
                       <button
                         type="button"
                         onClick={() => openSaleEdit(sale)}
-                        disabled={Boolean(sale.deliveryConfirmedAt) || Boolean((sale.deliveryAdjustments || []).length) || (state.returns || []).some((ret) => String(ret.saleId) === String(sale.id))}
+                        disabled={Boolean(sale.deliveryConfirmedAt) || Boolean((sale.deliveryAdjustments || []).length) || Boolean(sale.preOrderConfirmedAt) || (state.returns || []).some((ret) => String(ret.saleId) === String(sale.id))}
                       >
                         Edit
                       </button>
@@ -2214,7 +2749,7 @@ const CashierView = ({
                           type="button"
                           className="row-danger"
                           onClick={() => deleteRepSale(sale)}
-                          disabled={Boolean(sale.deliveryConfirmedAt) || Boolean((sale.deliveryAdjustments || []).length)}
+                          disabled={Boolean(sale.deliveryConfirmedAt) || Boolean((sale.deliveryAdjustments || []).length) || Boolean(sale.preOrderConfirmedAt)}
                         >
                           Delete
                         </button>
@@ -2515,10 +3050,13 @@ const CashierView = ({
                     <div>
                       <strong>{name}</strong>
                       <p>{customerOutstandingMap.get(name) ? `Outstanding ${currency(customerOutstandingMap.get(name))}` : "No outstanding"}</p>
+                      {(() => { const c = (state.customers || []).find((item) => String(item.name || "").trim().toLowerCase() === name.toLowerCase()); return c && Number(c.creditLimit || 0) > 0 ? <span className="rep-customer-credit-badge">Credit Limit: {currency(Number(c.creditLimit || 0))}</span> : null; })()}
                     </div>
                     <span>Use</span>
                   </button>
-                )) : <p className="form-hint">Type the customer name to search.</p>}
+                )) : (
+                  <p className="form-hint">Type the customer name to search.</p>
+                )}
               </div>
             </div>
           </div>
@@ -2612,124 +3150,91 @@ const CashierView = ({
                       {expandedSizeProductId !== String(product.id) ? <p className="catalog-edit-hint">Tap card to edit qty</p> : null}
                     </div>
                     {expandedSizeProductId === String(product.id) ? (
-                    <div className="rep-product-pick-actions" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="number"
-                        min="1"
-                        value={catalogQtyDrafts[product.id] ?? ""}
-                        onChange={(e) => setCatalogQtyDrafts((current) => ({ ...current, [product.id]: e.target.value }))}
-                        placeholder="Custom qty"
-                        className="catalog-qty-input"
-                      />
-                      <div className="catalog-quick-groups">
-                        {getBundleSize(product) > 0 ? (
-                          <div className="catalog-quick-group catalog-quick-group-bundle">
-                            <span className="catalog-quick-group-label">Bundles</span>
+                      <div className="rep-product-pick-actions" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="number"
+                          min="1"
+                          value={catalogQtyDrafts[product.id] ?? ""}
+                          onChange={(e) => setCatalogQtyDrafts((current) => ({ ...current, [product.id]: e.target.value }))}
+                          placeholder="Custom qty"
+                          className="catalog-qty-input"
+                        />
+                        <div className="catalog-quick-groups">
+                          {getBundleSize(product) > 0 ? (
+                            <div className="catalog-quick-group catalog-quick-group-bundle">
+                              <span className="catalog-quick-group-label">Bundles</span>
+                              <div className="catalog-quick-group-actions">
+                                <button
+                                  className="catalog-bundle-minus-btn"
+                                  type="button"
+                                  onTouchStart={triggerAddHaptic}
+                                  onPointerDown={triggerAddHaptic}
+                                  onClick={() => removeFromCartWithQty(product, getBundleSize(product))}
+                                  disabled={Number(cartQtyByProduct.get(product.id) || 0) < getBundleSize(product)}
+                                >
+                                  -1
+                                </button>
+                                <button
+                                  className="catalog-bundle-btn"
+                                  type="button"
+                                  onTouchStart={triggerAddHaptic}
+                                  onPointerDown={triggerAddHaptic}
+                                  onClick={() => addToCartWithQty(product, getBundleSize(product))}
+                                  disabled={getCatalogStock(product) < getBundleSize(product)}
+                                >
+                                  +1
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          <div className="catalog-quick-group catalog-quick-group-single">
+                            <span className="catalog-quick-group-label">Singles</span>
                             <div className="catalog-quick-group-actions">
                               <button
-                                className="catalog-bundle-minus-btn"
+                                className="catalog-single-minus-btn"
                                 type="button"
                                 onTouchStart={triggerAddHaptic}
                                 onPointerDown={triggerAddHaptic}
-                                onClick={() => removeFromCartWithQty(product, getBundleSize(product))}
-                                disabled={Number(cartQtyByProduct.get(product.id) || 0) < getBundleSize(product)}
+                                onClick={() => removeFromCartWithQty(product, 1)}
+                                disabled={Number(cartQtyByProduct.get(product.id) || 0) <= 0}
                               >
                                 -1
                               </button>
                               <button
-                                className="catalog-bundle-btn"
+                                className="catalog-single-btn"
                                 type="button"
                                 onTouchStart={triggerAddHaptic}
                                 onPointerDown={triggerAddHaptic}
-                                onClick={() => addToCartWithQty(product, getBundleSize(product))}
-                                disabled={getCatalogStock(product) < getBundleSize(product)}
+                                onClick={() => addToCartWithQty(product, 1)}
+                                disabled={getCatalogStock(product) <= 0}
                               >
                                 +1
                               </button>
                             </div>
                           </div>
-                        ) : null}
-                        <div className="catalog-quick-group catalog-quick-group-single">
-                          <span className="catalog-quick-group-label">Singles</span>
-                          <div className="catalog-quick-group-actions">
-                            <button
-                              className="catalog-single-minus-btn"
-                              type="button"
-                              onTouchStart={triggerAddHaptic}
-                              onPointerDown={triggerAddHaptic}
-                              onClick={() => removeFromCartWithQty(product, 1)}
-                              disabled={Number(cartQtyByProduct.get(product.id) || 0) <= 0}
-                            >
-                              -1
-                            </button>
-                            <button
-                              className="catalog-single-btn"
-                              type="button"
-                              onTouchStart={triggerAddHaptic}
-                              onPointerDown={triggerAddHaptic}
-                              onClick={() => addToCartWithQty(product, 1)}
-                              disabled={getCatalogStock(product) <= 0}
-                            >
-                              +1
-                            </button>
-                          </div>
                         </div>
+                        <button
+                          className="add-feedback-btn"
+                          type="button"
+                          onTouchStart={triggerAddHaptic}
+                          onPointerDown={triggerAddHaptic}
+                          onClick={() => addToCart(product)}
+                          disabled={
+                            getCatalogStock(product) <= 0
+                            || !Number.isFinite(Number(catalogQtyDrafts[product.id]))
+                            || Math.floor(Number(catalogQtyDrafts[product.id])) <= 0
+                          }
+                        >
+                          Add Qty
+                        </button>
+                        <p className="catalog-in-cart-chip">
+                          In cart: {Number(cartQtyByProduct.get(product.id) || 0)}
+                          {getBundleSize(product) > 0 ? ` (${Math.floor(Number(cartQtyByProduct.get(product.id) || 0) / getBundleSize(product))} bundle${Math.floor(Number(cartQtyByProduct.get(product.id) || 0) / getBundleSize(product)) === 1 ? "" : "s"} + ${Number(cartQtyByProduct.get(product.id) || 0) % getBundleSize(product)} single${(Number(cartQtyByProduct.get(product.id) || 0) % getBundleSize(product)) === 1 ? "" : "s"})` : " singles"}
+                        </p>
                       </div>
-                      <button
-                        className="add-feedback-btn"
-                        type="button"
-                        onTouchStart={triggerAddHaptic}
-                        onPointerDown={triggerAddHaptic}
-                        onClick={() => addToCart(product)}
-                        disabled={
-                          getCatalogStock(product) <= 0
-                          || !Number.isFinite(Number(catalogQtyDrafts[product.id]))
-                          || Math.floor(Number(catalogQtyDrafts[product.id])) <= 0
-                        }
-                      >
-                        Add Qty
-                      </button>
-                      <p className="catalog-in-cart-chip">
-                        In cart: {Number(cartQtyByProduct.get(product.id) || 0)}
-                        {getBundleSize(product) > 0 ? ` (${Math.floor(Number(cartQtyByProduct.get(product.id) || 0) / getBundleSize(product))} bundle${Math.floor(Number(cartQtyByProduct.get(product.id) || 0) / getBundleSize(product)) === 1 ? "" : "s"} + ${Number(cartQtyByProduct.get(product.id) || 0) % getBundleSize(product)} single${(Number(cartQtyByProduct.get(product.id) || 0) % getBundleSize(product)) === 1 ? "" : "s"})` : " singles"}
-                      </p>
-                    </div>
                     ) : null}
                   </article>
                 )) : <p className="form-hint">No items in this size for the current search.</p>}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {showAddCustomer ? (
-        <div className="low-stock-modal" onClick={() => setShowAddCustomer(false)}>
-          <div className="low-stock-modal-card customer-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="low-stock-modal-head">
-              <h3>Add Customer</h3>
-              <button type="button" onClick={() => setShowAddCustomer(false)}>Close</button>
-            </div>
-            <div className="admin-inline-form">
-              <input
-                value={customerDraft.name}
-                onChange={(e) => setCustomerDraft((current) => ({ ...current, name: e.target.value }))}
-                placeholder="Customer name"
-              />
-              <input
-                value={customerDraft.phone}
-                onChange={(e) => setCustomerDraft((current) => ({ ...current, phone: e.target.value }))}
-                placeholder="Mobile"
-              />
-              <textarea
-                value={customerDraft.address}
-                onChange={(e) => setCustomerDraft((current) => ({ ...current, address: e.target.value }))}
-                placeholder="Address"
-              />
-              {customerDraftError ? <p className="form-hint">{customerDraftError}</p> : null}
-              <div>
-                <button type="button" onClick={saveQuickCustomer} disabled={savingCustomer}>
-                  {savingCustomer ? "Saving..." : "Save Customer"}
-                </button>
               </div>
             </div>
           </div>
@@ -2745,7 +3250,8 @@ const REPORT_SUBPAGES = [
   { id: "cheque-summary", label: "Cheque Summary" },
   { id: "customer-wise", label: "Customer Wise Report" },
   { id: "rep-outstanding", label: "Rep Wise Customer Outstanding" },
-  { id: "delivery-report", label: "Delivery Report" }
+  { id: "delivery-report", label: "Delivery Report" },
+  { id: "empty-bottle-log", label: "Empty Bottle Log" }
 ];
 
 const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleDeleted, user }) => {
@@ -2798,6 +3304,9 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [reportDeliveryLorry, setReportDeliveryLorry] = useState("all");
   const [reportDeliveryDateFrom, setReportDeliveryDateFrom] = useState("");
   const [reportDeliveryDateTo, setReportDeliveryDateTo] = useState("");
+  const [emptyBottleLogSearch, setEmptyBottleLogSearch] = useState("");
+  const [emptyBottleLogDateFrom, setEmptyBottleLogDateFrom] = useState("");
+  const [emptyBottleLogDateTo, setEmptyBottleLogDateTo] = useState("");
   const [activePage, setActivePage] = useState("dashboard");
   const [notice, setNotice] = useState("");
 
@@ -2934,10 +3443,10 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     const startDate = chartDateFrom
       ? new Date(`${chartDateFrom}T00:00:00`)
       : (() => {
-          const d = new Date(endDate);
-          d.setDate(endDate.getDate() - 7);
-          return d;
-        })();
+        const d = new Date(endDate);
+        d.setDate(endDate.getDate() - 7);
+        return d;
+      })();
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate > endDate) return [];
     const cursor = new Date(startDate);
     let guard = 0;
@@ -2994,7 +3503,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const productInfoById = useMemo(() => {
     return new Map(state.products.map((item) => [
       item.id,
-      { name: item.name, sku: item.sku, size: item.size, category: item.category }
+      { name: item.name, sku: item.sku, size: item.size, category: item.category, invoicePrice: item.invoicePrice }
     ]));
   }, [state.products]);
 
@@ -3082,7 +3591,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       for (const sale of state.sales) {
         if (!inDateTimeRange(sale.createdAt, loadingDateFrom, loadingDateTo, loadingTimeFrom, loadingTimeTo)) continue;
         if (sale.lorry !== lorryName) continue;
-        if (!sale.deliveryConfirmedAt) continue;
+        if (!sale.deliveryConfirmedAt && !sale.preOrderConfirmedAt) continue;
         const returnedByProduct = saleReturnedQtyByProduct(sale, state.returns || []);
         const undeliveredByProduct = saleUndeliveredQtyByProduct(sale);
         for (const line of (sale.lines || [])) {
@@ -3375,31 +3884,86 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   }, [state.sales]);
   const dashboardProfitSummary = useMemo(() => {
     const productsById = new Map((state.products || []).map((product) => [String(product.id), product]));
-    const scopedSales = (state.sales || []).filter((sale) => inDateRange(sale.createdAt, dashboardProfitDateFrom, dashboardProfitDateTo));
-    let netRevenue = 0;
-    let invoiceCost = 0;
 
+    // 1. Sales created within the date range
+    const scopedSales = (state.sales || []).filter((sale) => inDateRange(sale.createdAt, dashboardProfitDateFrom, dashboardProfitDateTo));
+
+    // 2. Returns created within the date range
+    const scopedReturns = (state.returns || []).filter((ret) => inDateRange(ret.createdAt, dashboardProfitDateFrom, dashboardProfitDateTo));
+
+    // 3. Sales lookup map
+    const salesById = new Map((state.sales || []).map((sale) => [String(sale.id), sale]));
+
+    let grossRevenue = 0;
+    let initialCost = 0;
+
+    // Calculate gross sales revenue and initial cost
     for (const sale of scopedSales) {
-      netRevenue += saleNetTotal(sale);
-      const returnedByProduct = saleReturnedQtyByProduct(sale, state.returns || []);
-      const undeliveredByProduct = saleUndeliveredQtyByProduct(sale);
+      grossRevenue += Number(sale.total || 0);
       for (const line of (sale.lines || [])) {
-        const lineState = effectiveSaleLineState(sale, line, { returnedByProduct, undeliveredByProduct });
         const product = productsById.get(String(line.productId || ""));
-        const unitInvoice = Number(product?.invoicePrice ?? 0);
-        invoiceCost += lineState.effectiveQty * unitInvoice;
+        const unitInvoice = line.invoicePrice !== undefined ? Number(line.invoicePrice) : Number(product?.invoicePrice ?? 0);
+        initialCost += Number(line.quantity || 0) * unitInvoice;
       }
     }
 
-    const profit = Number((netRevenue - invoiceCost).toFixed(2));
+    let returnedRevenue = 0;
+    let returnedCost = 0;
+
+    // Deduct returns created in this date range
+    for (const ret of scopedReturns) {
+      const parentSale = salesById.get(String(ret.saleId));
+      if (!parentSale) continue;
+
+      returnedRevenue += Number(ret.totalAmount || 0);
+      for (const line of (ret.lines || [])) {
+        const product = productsById.get(String(line.productId || ""));
+        const parentLine = (parentSale.lines || []).find(l => String(l.productId) === String(line.productId));
+        const unitInvoicePrice = parentLine && parentLine.invoicePrice !== undefined
+          ? Number(parentLine.invoicePrice)
+          : (line.invoicePrice !== undefined ? Number(line.invoicePrice) : Number(product?.invoicePrice ?? 0));
+
+        returnedCost += Number(line.quantity || 0) * unitInvoicePrice;
+      }
+    }
+
+    let undeliveredRevenue = 0;
+    let undeliveredCost = 0;
+
+    // Deduct delivery adjustments created in this date range
+    for (const sale of (state.sales || [])) {
+      for (const adj of (sale.deliveryAdjustments || [])) {
+        if (!inDateRange(adj.createdAt, dashboardProfitDateFrom, dashboardProfitDateTo)) continue;
+
+        for (const line of (adj.lines || [])) {
+          const parentLine = (sale.lines || []).find(l => String(l.productId) === String(line.productId));
+          if (!parentLine) continue;
+
+          const preview = returnLinePreview(sale, parentLine, Number(line.quantity || 0));
+          undeliveredRevenue += Number(preview.returnAmount || 0);
+
+          const product = productsById.get(String(line.productId || ""));
+          const unitInvoice = parentLine.invoicePrice !== undefined
+            ? Number(parentLine.invoicePrice)
+            : Number(product?.invoicePrice ?? 0);
+
+          undeliveredCost += Number(line.quantity || 0) * unitInvoice;
+        }
+      }
+    }
+
+    const revenue = Number((grossRevenue - returnedRevenue - undeliveredRevenue).toFixed(2));
+    const cost = Number((initialCost - returnedCost - undeliveredCost).toFixed(2));
+    const profit = Number((revenue - cost).toFixed(2));
+
     return {
       from: dashboardProfitDateFrom,
       to: dashboardProfitDateTo,
       filteredSalesCount: scopedSales.length,
-      revenue: Number(netRevenue.toFixed(2)),
-      cost: Number(invoiceCost.toFixed(2)),
+      revenue,
+      cost,
       profit,
-      margin: netRevenue > 0 ? Number(((profit / netRevenue) * 100).toFixed(1)) : 0
+      margin: revenue > 0 ? Number(((profit / revenue) * 100).toFixed(1)) : 0
     };
   }, [dashboardProfitDateFrom, dashboardProfitDateTo, state.products, state.returns, state.sales]);
   const customerDetailData = useMemo(() => {
@@ -3485,15 +4049,15 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     const lowStockThreshold = Number(state?.settings?.lowStockThreshold ?? 25);
     const lowStockCount = rows.filter((row) => Number(row.stock || 0) <= lowStockThreshold).length;
     const outOfStockCount = rows.filter((row) => Number(row.stock || 0) <= 0).length;
-      const inventoryCost = Number(rows.reduce((acc, row) => (
-        acc + (Number(row.stock || 0) * Number(row.billingPrice ?? row.price ?? 0))
-      ), 0).toFixed(2));
-      const inventoryInvoice = Number(rows.reduce((acc, row) => (
-        acc + (Number(row.stock || 0) * Number(row.invoicePrice ?? 0))
-      ), 0).toFixed(2));
-      const inventoryMrp = Number(rows.reduce((acc, row) => (
-        acc + (Number(row.stock || 0) * Number(row.mrp ?? row.price ?? 0))
-      ), 0).toFixed(2));
+    const inventoryCost = Number(rows.reduce((acc, row) => (
+      acc + (Number(row.stock || 0) * Number(row.billingPrice ?? row.price ?? 0))
+    ), 0).toFixed(2));
+    const inventoryInvoice = Number(rows.reduce((acc, row) => (
+      acc + (Number(row.stock || 0) * Number(row.invoicePrice ?? 0))
+    ), 0).toFixed(2));
+    const inventoryMrp = Number(rows.reduce((acc, row) => (
+      acc + (Number(row.stock || 0) * Number(row.mrp ?? row.price ?? 0))
+    ), 0).toFixed(2));
     const topStockItem = rows.reduce(
       (best, row) => (Number(row.stock || 0) > Number(best?.stock || -1) ? row : best),
       null
@@ -3503,10 +4067,10 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       totalUnits,
       totalBundles,
       lowStockCount,
-        outOfStockCount,
-        inventoryInvoice,
-        inventoryCost,
-        inventoryMrp,
+      outOfStockCount,
+      inventoryInvoice,
+      inventoryCost,
+      inventoryMrp,
       topStockName: topStockItem?.name || topStockItem?.sku || "-",
       topStockUnits: Number(topStockItem?.stock || 0)
     };
@@ -3905,6 +4469,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 
   const deliveryRows = useMemo(() => {
     const rows = (state.sales || [])
+      .filter((sale) => sale.orderType !== "preorder")
       .filter((sale) => inDateTimeRange(sale.createdAt, deliveryDateFrom, deliveryDateTo, deliveryTimeFrom, deliveryTimeTo))
       .filter((sale) => (deliveryLorry === "all" ? true : sale.lorry === deliveryLorry))
       .map((sale) => {
@@ -4122,6 +4687,24 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     [reportDeliveryRows, tableSort]
   );
 
+  const emptyBottleLogRows = useMemo(() => {
+    return (state.emptyBottleCollections || [])
+      .filter((entry) => inDateRange(entry.createdAt, emptyBottleLogDateFrom, emptyBottleLogDateTo))
+      .map((entry) => ({ ...entry, when: new Date(entry.createdAt).toLocaleString() }))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }, [state.emptyBottleCollections, emptyBottleLogDateFrom, emptyBottleLogDateTo]);
+  const emptyBottleLogSummary = useMemo(() => {
+    const totalQty = emptyBottleLogRows.reduce((acc, row) => acc + Number(row.quantity || 0), 0);
+    const collectors = new Set(emptyBottleLogRows.map((row) => row.collectedBy).filter(Boolean));
+    const customers = new Set(emptyBottleLogRows.map((row) => row.customerName).filter(Boolean));
+    return {
+      entries: emptyBottleLogRows.length,
+      totalQty,
+      collectors: collectors.size,
+      customers: customers.size
+    };
+  }, [emptyBottleLogRows]);
+
   const viewedSale = useMemo(
     () => (state.sales || []).find((sale) => String(sale.id) === String(viewSaleId)) || null,
     [state.sales, viewSaleId]
@@ -4213,7 +4796,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   }, [deliveryRemaining, deliveryUndeliveredAmountWithDraft, deliveryUndeliveredAmount]);
 
   const openAdminSaleEdit = (sale) => {
-    const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length);
+    const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length) || Boolean(sale?.preOrderConfirmedAt);
     const hasReturns = (state.returns || []).some((ret) => String(ret.saleId) === String(sale?.id));
     if (hasDeliveryProcessing) {
       setNotice("This bill cannot be edited after delivery processing has started.");
@@ -4256,7 +4839,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 
   const deleteAdminSale = async (sale) => {
     try {
-      const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length);
+      const hasDeliveryProcessing = Boolean(sale?.deliveryConfirmedAt) || Boolean((sale?.deliveryAdjustments || []).length) || Boolean(sale?.preOrderConfirmedAt);
       if (hasDeliveryProcessing) {
         setNotice("This bill cannot be deleted after delivery processing has started.");
         return;
@@ -4365,10 +4948,10 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 <body>
   <div class="sheet">
     <div class="head">
-      <img src="/invoice-pepsi.png" alt="Pepsi" />
+      <img src="/lucky-logo.png" alt="Lucky" />
       <div>
         <h1>${escapeHtml(lorry)} Loading Breakdown</h1>
-        <p>Pepsi Distributor POS • Date Range: ${escapeHtml(dateRangeLabel)}</p>
+        <p>Lucky Distributor POS • Date Range: ${escapeHtml(dateRangeLabel)}</p>
       </div>
     </div>
     <div class="kpis">
@@ -4455,7 +5038,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 <body>
   <div class="sheet">
     <div class="head">
-      <img src="/invoice-pepsi.png" alt="Pepsi" />
+      <img src="/lucky-logo.png" alt="Lucky" />
       <div>
         <h1>${escapeHtml(rep)} Customer Outstanding</h1>
         <p>Outstanding customer summary by rep</p>
@@ -4556,7 +5139,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       <tbody>${bodyRows}</tbody>
     </table>
     <div class="footer">
-      <div>Pepsi Distributor POS</div>
+      <div>Lucky Distributor POS</div>
       <div>J&amp;Co. Software Solutions</div>
     </div>
   </div>
@@ -4693,7 +5276,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       setNotice("Customer name is required.");
       return;
     }
-    if (isManager && !managerFullAccessEnabled) {
+    if (isManager && !managerFullAccessEnabled && customerForm.id) {
       setNotice("Manager limited access cannot edit customers.");
       return;
     }
@@ -4841,7 +5424,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       .then(() => {
         setShowStaffForm(false);
         if (canManageUsers) {
-          fetchAuthUsers().then((rows) => setAuthUsers(Array.isArray(rows) ? rows : [])).catch(() => {});
+          fetchAuthUsers().then((rows) => setAuthUsers(Array.isArray(rows) ? rows : [])).catch(() => { });
         }
         setNotice(isEdit ? "User saved." : "User created.");
       })
@@ -4881,7 +5464,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     try {
       await Promise.all(actions);
       if (canManageUsers) {
-        fetchAuthUsers().then((rows) => setAuthUsers(Array.isArray(rows) ? rows : [])).catch(() => {});
+        fetchAuthUsers().then((rows) => setAuthUsers(Array.isArray(rows) ? rows : [])).catch(() => { });
       }
       setShowStaffForm(false);
       setNotice("User deleted.");
@@ -4956,17 +5539,17 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       return;
     }
     setStockMode("edit");
-      setStockForm({
-        productId: state.products[0]?.id || "",
-        quantity: "",
-        stock: state.products[0]?.stock || "",
-        sku: state.products[0]?.sku || "",
-        invoicePrice: String(state.products[0]?.invoicePrice ?? ""),
-        billingPrice: String(state.products[0]?.billingPrice ?? state.products[0]?.price ?? ""),
-        mrp: String(state.products[0]?.mrp ?? state.products[0]?.price ?? "")
-      });
-      setShowStockForm(true);
-    };
+    setStockForm({
+      productId: state.products[0]?.id || "",
+      quantity: "",
+      stock: state.products[0]?.stock || "",
+      sku: state.products[0]?.sku || "",
+      invoicePrice: String(state.products[0]?.invoicePrice ?? ""),
+      billingPrice: String(state.products[0]?.billingPrice ?? state.products[0]?.price ?? ""),
+      mrp: String(state.products[0]?.mrp ?? state.products[0]?.price ?? "")
+    });
+    setShowStockForm(true);
+  };
 
   const openStockEditByRow = (row) => {
     if (!canManageStock) {
@@ -4980,29 +5563,29 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       return;
     }
     setStockMode("edit");
-      setStockForm({
-        productId: matched.id,
-        quantity: "",
-        stock: String(matched.stock ?? ""),
-        sku: matched.sku || "",
-        invoicePrice: String(matched.invoicePrice ?? ""),
-        billingPrice: String(matched.billingPrice ?? matched.price ?? ""),
-        mrp: String(matched.mrp ?? matched.price ?? "")
-      });
-      setShowStockForm(true);
-    };
+    setStockForm({
+      productId: matched.id,
+      quantity: "",
+      stock: String(matched.stock ?? ""),
+      sku: matched.sku || "",
+      invoicePrice: String(matched.invoicePrice ?? ""),
+      billingPrice: String(matched.billingPrice ?? matched.price ?? ""),
+      mrp: String(matched.mrp ?? matched.price ?? "")
+    });
+    setShowStockForm(true);
+  };
 
   const onStockProductChange = (productId) => {
     const selected = state.products.find((item) => item.id === productId);
-      setStockForm((current) => ({
-        ...current,
-        productId,
-        sku: selected?.sku || "",
-        invoicePrice: stockMode === "edit" ? String(selected?.invoicePrice ?? "") : current.invoicePrice,
-        billingPrice: stockMode === "edit" ? String(selected?.billingPrice ?? selected?.price ?? "") : current.billingPrice,
-        mrp: stockMode === "edit" ? String(selected?.mrp ?? selected?.price ?? "") : current.mrp,
-        stock: stockMode === "edit" ? String(selected?.stock ?? "") : current.stock
-      }));
+    setStockForm((current) => ({
+      ...current,
+      productId,
+      sku: selected?.sku || "",
+      invoicePrice: stockMode === "edit" ? String(selected?.invoicePrice ?? "") : current.invoicePrice,
+      billingPrice: stockMode === "edit" ? String(selected?.billingPrice ?? selected?.price ?? "") : current.billingPrice,
+      mrp: stockMode === "edit" ? String(selected?.mrp ?? selected?.price ?? "") : current.mrp,
+      stock: stockMode === "edit" ? String(selected?.stock ?? "") : current.stock
+    }));
   };
 
   const onStockSearchChange = (value) => {
@@ -5018,12 +5601,12 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       productId: product.id,
       sku: product.sku
     }));
-      setNewStockItemForm((current) => ({
-        ...current,
-        billingPrice: String(product.billingPrice ?? ""),
-        invoicePrice: String(product.invoicePrice ?? ""),
-        mrp: String(product.mrp ?? product.price ?? "")
-      }));
+    setNewStockItemForm((current) => ({
+      ...current,
+      billingPrice: String(product.billingPrice ?? ""),
+      invoicePrice: String(product.invoicePrice ?? ""),
+      mrp: String(product.mrp ?? product.price ?? "")
+    }));
     setShowStockSuggestions(false);
   };
 
@@ -5172,32 +5755,32 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 
   const saveStock = async () => {
     try {
-        if (!canManageStock) {
-          setNotice("You do not have stock edit access.");
+      if (!canManageStock) {
+        setNotice("You do not have stock edit access.");
+        return;
+      }
+      const selected = state.products.find((item) => item.id === stockForm.productId);
+      if (stockMode === "add") {
+        const qty = Number(stockForm.quantity || 0);
+        const billingPrice = Number(newStockItemForm.billingPrice);
+        const invoicePrice = Number(newStockItemForm.invoicePrice || 0);
+        const mrp = Number(newStockItemForm.mrp);
+        if (Number.isNaN(qty) || qty <= 0) {
+          setNotice("Enter a valid quantity.");
           return;
         }
-        const selected = state.products.find((item) => item.id === stockForm.productId);
-        if (stockMode === "add") {
-          const qty = Number(stockForm.quantity || 0);
-          const billingPrice = Number(newStockItemForm.billingPrice);
-          const invoicePrice = Number(newStockItemForm.invoicePrice || 0);
-          const mrp = Number(newStockItemForm.mrp);
-          if (Number.isNaN(qty) || qty <= 0) {
-            setNotice("Enter a valid quantity.");
-            return;
-          }
-          if (Number.isNaN(billingPrice) || billingPrice < 0 || Number.isNaN(invoicePrice) || invoicePrice < 0 || Number.isNaN(mrp) || mrp <= 0) {
-            setNotice("Invoice Price, Billing Price and MRP are required.");
-            return;
-          }
+        if (Number.isNaN(billingPrice) || billingPrice < 0 || Number.isNaN(invoicePrice) || invoicePrice < 0 || Number.isNaN(mrp) || mrp <= 0) {
+          setNotice("Invoice Price, Billing Price and MRP are required.");
+          return;
+        }
 
-          if (selected) {
-            await patchProduct(selected.id, {
-              stock: Number(selected.stock) + qty,
-              invoicePrice,
-              billingPrice,
-              mrp,
-              price: mrp
+        if (selected) {
+          await patchProduct(selected.id, {
+            stock: Number(selected.stock) + qty,
+            invoicePrice,
+            billingPrice,
+            mrp,
+            price: mrp
           });
           setNotice(`Stock added to ${selected.name}.`);
         } else {
@@ -5208,32 +5791,32 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
           }
           const generatedSkuBase = name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "ITEM";
           const generatedSku = `${generatedSkuBase}${Math.floor(100 + Math.random() * 900)}`;
-            await createProduct({
-              name,
-              sku: newStockItemForm.sku.trim() || generatedSku,
-              category: newStockItemForm.category.trim() || "General",
-              invoicePrice,
-              billingPrice,
-              mrp,
-              price: mrp,
+          await createProduct({
+            name,
+            sku: newStockItemForm.sku.trim() || generatedSku,
+            category: newStockItemForm.category.trim() || "General",
+            invoicePrice,
+            billingPrice,
+            mrp,
+            price: mrp,
             stock: qty
           });
           setNotice(`New item created: ${name}.`);
         }
-        } else {
-          if (!selected) {
+      } else {
+        if (!selected) {
           setNotice("Select a valid product.");
           return;
-          }
-          await patchProduct(selected.id, {
-            stock: Number(stockForm.stock || selected.stock),
-            sku: String(stockForm.sku || selected.sku).trim(),
-            invoicePrice: Number(stockForm.invoicePrice || selected.invoicePrice || 0),
-            billingPrice: Number(stockForm.billingPrice || selected.billingPrice || selected.price || 0),
-            mrp: Number(stockForm.mrp || selected.mrp || selected.price || 0),
-            price: Number(stockForm.mrp || selected.mrp || selected.price || 0)
-          });
-          setNotice("Stock updated.");
+        }
+        await patchProduct(selected.id, {
+          stock: Number(stockForm.stock || selected.stock),
+          sku: String(stockForm.sku || selected.sku).trim(),
+          invoicePrice: Number(stockForm.invoicePrice || selected.invoicePrice || 0),
+          billingPrice: Number(stockForm.billingPrice || selected.billingPrice || selected.price || 0),
+          mrp: Number(stockForm.mrp || selected.mrp || selected.price || 0),
+          price: Number(stockForm.mrp || selected.mrp || selected.price || 0)
+        });
+        setNotice("Stock updated.");
       }
       setShowStockForm(false);
     } catch (error) {
@@ -5369,56 +5952,70 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   };
 
   const navItems = [
-    { id: "dashboard", label: "Dashboard", iconClass: "dashboard", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4 13.5 12 5l8 8v6.2a1.3 1.3 0 0 1-1.3 1.3h-3.9v-5h-5.6v5H5.3A1.3 1.3 0 0 1 4 19.2z" />
-      </svg>
-    ) },
-    { id: "customers", label: "Customers", iconClass: "customers", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="9" cy="8" r="3.2" />
-        <path d="M3.8 18.2c0-3.1 2.4-5.4 5.2-5.4s5.2 2.3 5.2 5.4" />
-        <circle cx="16.8" cy="9" r="2.4" />
-        <path d="M14.4 17.8c.5-2 1.9-3.7 4.3-4.2 1.1-.2 2.1.2 2.9.8" />
-      </svg>
-    ) },
-    { id: "stock", label: "Stock", iconClass: "stock", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4.5 7.5 12 4l7.5 3.5L12 11z" />
-        <path d="M4.5 7.5V16.5L12 20v-9z" />
-        <path d="M19.5 7.5V16.5L12 20v-9z" />
-      </svg>
-    ) },
-    { id: "staff", label: "Staff", iconClass: "staff", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="7.5" r="3.2" />
-        <path d="M5 19c0-3.6 3-6 7-6s7 2.4 7 6" />
-        <path d="M18.8 6.2h2.6M20.1 4.9v2.6" />
-      </svg>
-    ) },
-    { id: "deliveries", label: "Deliveries", iconClass: "deliveries", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3.5 7.5h10.2v7.2H3.5z" />
-        <path d="M13.7 10.2h3.2l2.1 2.4v2.1h-5.3z" />
-        <circle cx="8" cy="18" r="1.8" />
-        <circle cx="17.4" cy="18" r="1.8" />
-      </svg>
-    ) },
-    { id: "reports", label: "Reports", iconClass: "reports", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M6 18.5V10.8M12 18.5V6.5M18 18.5V13.2" />
-        <path d="M4 19.5h16" />
-      </svg>
-    ) },
-    { id: "loadings", label: "Loadings", iconClass: "loadings", icon: (
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M4.2 8.2h9.7v6.5H4.2z" />
-        <path d="M13.9 10.4h3.4l2.5 2.7v1.6h-5.9z" />
-        <path d="M7.2 6V4.2M10.8 6V4.2M16.3 6V4.2" />
-        <circle cx="8.1" cy="17.8" r="1.6" />
-        <circle cx="17.4" cy="17.8" r="1.6" />
-      </svg>
-    ) }
+    {
+      id: "dashboard", label: "Dashboard", iconClass: "dashboard", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 13.5 12 5l8 8v6.2a1.3 1.3 0 0 1-1.3 1.3h-3.9v-5h-5.6v5H5.3A1.3 1.3 0 0 1 4 19.2z" />
+        </svg>
+      )
+    },
+    {
+      id: "customers", label: "Customers", iconClass: "customers", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="9" cy="8" r="3.2" />
+          <path d="M3.8 18.2c0-3.1 2.4-5.4 5.2-5.4s5.2 2.3 5.2 5.4" />
+          <circle cx="16.8" cy="9" r="2.4" />
+          <path d="M14.4 17.8c.5-2 1.9-3.7 4.3-4.2 1.1-.2 2.1.2 2.9.8" />
+        </svg>
+      )
+    },
+    {
+      id: "stock", label: "Stock", iconClass: "stock", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4.5 7.5 12 4l7.5 3.5L12 11z" />
+          <path d="M4.5 7.5V16.5L12 20v-9z" />
+          <path d="M19.5 7.5V16.5L12 20v-9z" />
+        </svg>
+      )
+    },
+    {
+      id: "staff", label: "Staff", iconClass: "staff", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="7.5" r="3.2" />
+          <path d="M5 19c0-3.6 3-6 7-6s7 2.4 7 6" />
+          <path d="M18.8 6.2h2.6M20.1 4.9v2.6" />
+        </svg>
+      )
+    },
+    {
+      id: "deliveries", label: "Deliveries", iconClass: "deliveries", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3.5 7.5h10.2v7.2H3.5z" />
+          <path d="M13.7 10.2h3.2l2.1 2.4v2.1h-5.3z" />
+          <circle cx="8" cy="18" r="1.8" />
+          <circle cx="17.4" cy="18" r="1.8" />
+        </svg>
+      )
+    },
+    {
+      id: "reports", label: "Reports", iconClass: "reports", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 18.5V10.8M12 18.5V6.5M18 18.5V13.2" />
+          <path d="M4 19.5h16" />
+        </svg>
+      )
+    },
+    {
+      id: "loadings", label: "Loadings", iconClass: "loadings", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4.2 8.2h9.7v6.5H4.2z" />
+          <path d="M13.9 10.4h3.4l2.5 2.7v1.6h-5.9z" />
+          <path d="M7.2 6V4.2M10.8 6V4.2M16.3 6V4.2" />
+          <circle cx="8.1" cy="17.8" r="1.6" />
+          <circle cx="17.4" cy="17.8" r="1.6" />
+        </svg>
+      )
+    }
   ];
 
   return (
@@ -5605,12 +6202,12 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 <header>
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "name")}>Name{sortMark("customers", "name")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "phone")}>Phone{sortMark("customers", "phone")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "orders")}>Orders{sortMark("customers", "orders")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "spent")}>Total Spent (LKR){sortMark("customers", "spent")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "creditLimit")}>Credit Limit (LKR){sortMark("customers", "creditLimit")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "outstanding")}>Outstanding (LKR){sortMark("customers", "outstanding")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customers", "daysLeft")}>Days Left{sortMark("customers", "daysLeft")}</button>
-                  </header>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "orders")}>Orders{sortMark("customers", "orders")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "spent")}>Total Spent (LKR){sortMark("customers", "spent")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "creditLimit")}>Credit Limit (LKR){sortMark("customers", "creditLimit")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "outstanding")}>Outstanding (LKR){sortMark("customers", "outstanding")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "daysLeft")}>Days Left{sortMark("customers", "daysLeft")}</button>
+                </header>
                 {sortedCustomerRows.length ? sortedCustomerRows.map((row) => (
                   <article
                     key={row.name}
@@ -5644,7 +6241,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               {showStockForm ? (
                 <div className="low-stock-modal" onClick={() => setShowStockForm(false)}>
                   <div className="low-stock-modal-card stock-entry-modal" onClick={(e) => e.stopPropagation()}>
-                  <div className="low-stock-modal-head">
+                    <div className="low-stock-modal-head">
                       <h3>{stockMode === "add" ? "Stock Entry" : "Edit Stock"}</h3>
                       <button type="button" className="ghost" onClick={() => setShowStockForm(false)}>Close</button>
                     </div>
@@ -5842,14 +6439,14 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   </article>
                 </div>
                 <div className="stock-summary-foot">
-                    <article>
-                      <span>Invoice Value (LKR)</span>
-                      <strong>{formatLkrValue(stockPageSummary.inventoryInvoice)}</strong>
-                    </article>
-                    <article>
-                      <span>Inventory Cost (LKR)</span>
-                      <strong>{formatLkrValue(stockPageSummary.inventoryCost)}</strong>
-                    </article>
+                  <article>
+                    <span>Invoice Value (LKR)</span>
+                    <strong>{formatLkrValue(stockPageSummary.inventoryInvoice)}</strong>
+                  </article>
+                  <article>
+                    <span>Inventory Cost (LKR)</span>
+                    <strong>{formatLkrValue(stockPageSummary.inventoryCost)}</strong>
+                  </article>
                   <article>
                     <span>Inventory MRP (LKR)</span>
                     <strong>{formatLkrValue(stockPageSummary.inventoryMrp)}</strong>
@@ -5862,15 +6459,15 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 </div>
               </section>
               <div className="admin-table stock-table stock-table-tech">
-                  <header>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("stock", "sku")}>SKU{sortMark("stock", "sku")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("stock", "invoicePrice")}>Invoice Price (LKR){sortMark("stock", "invoicePrice")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("stock", "billingPrice")}>Billing Price (LKR){sortMark("stock", "billingPrice")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("stock", "mrp")}>MRP (LKR){sortMark("stock", "mrp")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("stock", "totalBundles")}>Total Bundles{sortMark("stock", "totalBundles")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("stock", "stock")}>Stock{sortMark("stock", "stock")}</button>
-                    <span className="th-action">Action</span>
-                  </header>
+                <header>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "sku")}>SKU{sortMark("stock", "sku")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "invoicePrice")}>Invoice Price (LKR){sortMark("stock", "invoicePrice")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "billingPrice")}>Billing Price (LKR){sortMark("stock", "billingPrice")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "mrp")}>MRP (LKR){sortMark("stock", "mrp")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "totalBundles")}>Total Bundles{sortMark("stock", "totalBundles")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "stock")}>Stock{sortMark("stock", "stock")}</button>
+                  <span className="th-action">Action</span>
+                </header>
                 {sortedStockRows.map((item) => (
                   <article
                     key={item.id}
@@ -5886,16 +6483,16 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                         openStockEditByRow(item);
                       }
                     }}
-                    >
-                      <span>{item.sku}</span>
-                      <span>{formatLkrValue(item.invoicePrice ?? 0)}</span>
-                      <span>{formatLkrValue(item.billingPrice ?? item.price ?? 0)}</span>
-                      <span>{formatLkrValue(item.mrp ?? item.price ?? 0)}</span>
-                      <span>{(() => {
-                        const bundleSize = getBundleSize(item);
-                        return bundleSize > 0 ? Math.floor(Number(item.stock || 0) / bundleSize) : 0;
-                      })()}</span>
-                      <span className={item.stock <= 25 ? "low" : ""}>{item.stock}</span>
+                  >
+                    <span>{item.sku}</span>
+                    <span>{formatLkrValue(item.invoicePrice ?? 0)}</span>
+                    <span>{formatLkrValue(item.billingPrice ?? item.price ?? 0)}</span>
+                    <span>{formatLkrValue(item.mrp ?? item.price ?? 0)}</span>
+                    <span>{(() => {
+                      const bundleSize = getBundleSize(item);
+                      return bundleSize > 0 ? Math.floor(Number(item.stock || 0) / bundleSize) : 0;
+                    })()}</span>
+                    <span className={item.stock <= 25 ? "low" : ""}>{item.stock}</span>
                     <span className="action-cell">
                       {canManageStock ? (
                         <button
@@ -6185,99 +6782,99 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 </>
               ) : (
                 <>
-              <input
-                className="search-icon-input imperfect-search-input"
-                value={deliveriesSearch}
-                onChange={(e) => setDeliveriesSearch(e.target.value)}
-                placeholder="Search deliveries"
-              />
-              <div className="admin-table deliveries-table">
-                <header>
-                  <button type="button" className="th-sort delivery-col-id" onClick={() => toggleSort("deliveries", "id")}>Sale ID{sortMark("deliveries", "id")}</button>
-                  <button type="button" className="th-sort delivery-col-date" onClick={() => toggleSort("deliveries", "when")}>Date/Time{sortMark("deliveries", "when")}</button>
-                  <button type="button" className="th-sort delivery-col-rep" onClick={() => toggleSort("deliveries", "rep")}>Rep{sortMark("deliveries", "rep")}</button>
-                  <button type="button" className="th-sort delivery-col-lorry" onClick={() => toggleSort("deliveries", "lorry")}>Lorry{sortMark("deliveries", "lorry")}</button>
-                  <button type="button" className="th-sort delivery-col-total" onClick={() => toggleSort("deliveries", "total")}>Total (LKR){sortMark("deliveries", "total")}</button>
-                  <button type="button" className="th-sort delivery-col-status" onClick={() => toggleSort("deliveries", "status")}>Status{sortMark("deliveries", "status")}</button>
-                  <span className="th-action delivery-col-action">Action</span>
-                </header>
-                {sortedDeliveryRows.filter((row) => matchesSearch(deliveriesSearch, row.id, row.rep, row.lorry, row.when, row.sale?.customerName, row.confirmed ? "confirmed" : "pending")).length ? sortedDeliveryRows.filter((row) => matchesSearch(deliveriesSearch, row.id, row.rep, row.lorry, row.when, row.sale?.customerName, row.confirmed ? "confirmed" : "pending")).map((row) => (
-                  <article key={`d-${row.id}`}>
-                    <span className="delivery-col-id delivery-sale-cell">
-                      <strong className="delivery-sale-id">#{row.id}</strong>
-                      <small className="delivery-sale-customer">{row.sale.customerName || "Walk-in"}</small>
-                      <small className="delivery-sale-meta">{row.when} • {row.rep}</small>
-                    </span>
-                    <span className="delivery-col-date delivery-cell-date">{row.when}</span>
-                    <span className="delivery-col-rep">{row.rep}</span>
-                    <span className="delivery-col-lorry">{row.lorry}</span>
-                    <span className="delivery-col-total">{formatLkrValue(row.total || 0)}</span>
-                    <span className="delivery-col-status">
-                      <span className={row.confirmed ? "delivery-status confirmed" : "delivery-status pending"}>
-                        {row.confirmed ? "Confirmed" : "Pending"}
-                      </span>
-                    </span>
-                    <span className="action-cell delivery-col-action">
-                      <button type="button" className="delivery-action-btn" onClick={() => openDeliveryModal(row.sale)}>
-                        {row.confirmed ? "Update" : "Confirm"}
-                      </button>
-                    </span>
-                  </article>
-                )) : <p>No delivery bills found for selected filters.</p>}
-              </div>
-              <div className="report-head deliveries-report-head" style={{ marginTop: "0.65rem" }}>
-                <h3>Delivered Items Report</h3>
-              </div>
-              <div className="rep-date-filters">
-                <label className="rep-date-field">
-                  <span>From</span>
-                  <input type="date" value={deliveryReportDateFrom} onChange={(e) => setDeliveryReportDateFrom(e.target.value)} />
-                </label>
-                <label className="rep-date-field">
-                  <span>To</span>
-                  <input type="date" value={deliveryReportDateTo} onChange={(e) => setDeliveryReportDateTo(e.target.value)} />
-                </label>
-              </div>
-              <div className="delivery-kpi-grid">
-                <article>
-                  <span>Sold Qty</span>
-                  <strong>{soldTotals.qty}</strong>
-                </article>
-                <article>
-                  <span>Sold Value</span>
-                  <strong>{currency(soldTotals.value)}</strong>
-                </article>
-                <article>
-                  <span>Delivered Qty</span>
-                  <strong>{deliveredTotals.qty}</strong>
-                </article>
-                <article>
-                  <span>Delivered Value</span>
-                  <strong>{currency(deliveredTotals.value)}</strong>
-                </article>
-              </div>
-              <input
-                className="search-icon-input imperfect-search-input"
-                value={deliveredItemsSearch}
-                onChange={(e) => setDeliveredItemsSearch(e.target.value)}
-                placeholder="Search delivered items"
-              />
-              <div className="admin-table deliveries-report-table">
-                <header>
-                  <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "item")}>Item{sortMark("deliveredItems", "item")}</button>
-                  <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "sku")}>SKU{sortMark("deliveredItems", "sku")}</button>
-                  <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "qty")}>Delivered Qty{sortMark("deliveredItems", "qty")}</button>
-                  <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "value")}>Delivered Value{sortMark("deliveredItems", "value")}</button>
-                </header>
-                {sortedDeliveredItemRows.filter((row) => matchesSearch(deliveredItemsSearch, row.item, row.sku)).length ? sortedDeliveredItemRows.filter((row) => matchesSearch(deliveredItemsSearch, row.item, row.sku)).map((row) => (
-                  <article key={`dr-${row.key}`}>
-                    <span>{row.item}</span>
-                    <span>{row.sku}</span>
-                    <span>{row.qty}</span>
-                    <span>{currency(row.value)}</span>
-                  </article>
-                )) : <p>No delivered item records for selected filters.</p>}
-              </div>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={deliveriesSearch}
+                    onChange={(e) => setDeliveriesSearch(e.target.value)}
+                    placeholder="Search deliveries"
+                  />
+                  <div className="admin-table deliveries-table">
+                    <header>
+                      <button type="button" className="th-sort delivery-col-id" onClick={() => toggleSort("deliveries", "id")}>Sale ID{sortMark("deliveries", "id")}</button>
+                      <button type="button" className="th-sort delivery-col-date" onClick={() => toggleSort("deliveries", "when")}>Date/Time{sortMark("deliveries", "when")}</button>
+                      <button type="button" className="th-sort delivery-col-rep" onClick={() => toggleSort("deliveries", "rep")}>Rep{sortMark("deliveries", "rep")}</button>
+                      <button type="button" className="th-sort delivery-col-lorry" onClick={() => toggleSort("deliveries", "lorry")}>Lorry{sortMark("deliveries", "lorry")}</button>
+                      <button type="button" className="th-sort delivery-col-total" onClick={() => toggleSort("deliveries", "total")}>Total (LKR){sortMark("deliveries", "total")}</button>
+                      <button type="button" className="th-sort delivery-col-status" onClick={() => toggleSort("deliveries", "status")}>Status{sortMark("deliveries", "status")}</button>
+                      <span className="th-action delivery-col-action">Action</span>
+                    </header>
+                    {sortedDeliveryRows.filter((row) => matchesSearch(deliveriesSearch, row.id, row.rep, row.lorry, row.when, row.sale?.customerName, row.confirmed ? "confirmed" : "pending")).length ? sortedDeliveryRows.filter((row) => matchesSearch(deliveriesSearch, row.id, row.rep, row.lorry, row.when, row.sale?.customerName, row.confirmed ? "confirmed" : "pending")).map((row) => (
+                      <article key={`d-${row.id}`}>
+                        <span className="delivery-col-id delivery-sale-cell">
+                          <strong className="delivery-sale-id">#{row.id}</strong>
+                          <small className="delivery-sale-customer">{row.sale.customerName || "Walk-in"}</small>
+                          <small className="delivery-sale-meta">{row.when} • {row.rep}</small>
+                        </span>
+                        <span className="delivery-col-date delivery-cell-date">{row.when}</span>
+                        <span className="delivery-col-rep">{row.rep}</span>
+                        <span className="delivery-col-lorry">{row.lorry}</span>
+                        <span className="delivery-col-total">{formatLkrValue(row.total || 0)}</span>
+                        <span className="delivery-col-status">
+                          <span className={row.confirmed ? "delivery-status confirmed" : "delivery-status pending"}>
+                            {row.confirmed ? "Confirmed" : "Pending"}
+                          </span>
+                        </span>
+                        <span className="action-cell delivery-col-action">
+                          <button type="button" className="delivery-action-btn" onClick={() => openDeliveryModal(row.sale)}>
+                            {row.confirmed ? "Update" : "Confirm"}
+                          </button>
+                        </span>
+                      </article>
+                    )) : <p>No delivery bills found for selected filters.</p>}
+                  </div>
+                  <div className="report-head deliveries-report-head" style={{ marginTop: "0.65rem" }}>
+                    <h3>Delivered Items Report</h3>
+                  </div>
+                  <div className="rep-date-filters">
+                    <label className="rep-date-field">
+                      <span>From</span>
+                      <input type="date" value={deliveryReportDateFrom} onChange={(e) => setDeliveryReportDateFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To</span>
+                      <input type="date" value={deliveryReportDateTo} onChange={(e) => setDeliveryReportDateTo(e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="delivery-kpi-grid">
+                    <article>
+                      <span>Sold Qty</span>
+                      <strong>{soldTotals.qty}</strong>
+                    </article>
+                    <article>
+                      <span>Sold Value</span>
+                      <strong>{currency(soldTotals.value)}</strong>
+                    </article>
+                    <article>
+                      <span>Delivered Qty</span>
+                      <strong>{deliveredTotals.qty}</strong>
+                    </article>
+                    <article>
+                      <span>Delivered Value</span>
+                      <strong>{currency(deliveredTotals.value)}</strong>
+                    </article>
+                  </div>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={deliveredItemsSearch}
+                    onChange={(e) => setDeliveredItemsSearch(e.target.value)}
+                    placeholder="Search delivered items"
+                  />
+                  <div className="admin-table deliveries-report-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "item")}>Item{sortMark("deliveredItems", "item")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "sku")}>SKU{sortMark("deliveredItems", "sku")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "qty")}>Delivered Qty{sortMark("deliveredItems", "qty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveredItems", "value")}>Delivered Value{sortMark("deliveredItems", "value")}</button>
+                    </header>
+                    {sortedDeliveredItemRows.filter((row) => matchesSearch(deliveredItemsSearch, row.item, row.sku)).length ? sortedDeliveredItemRows.filter((row) => matchesSearch(deliveredItemsSearch, row.item, row.sku)).map((row) => (
+                      <article key={`dr-${row.key}`}>
+                        <span>{row.item}</span>
+                        <span>{row.sku}</span>
+                        <span>{row.qty}</span>
+                        <span>{currency(row.value)}</span>
+                      </article>
+                    )) : <p>No delivered item records for selected filters.</p>}
+                  </div>
                 </>
               )}
             </section>
@@ -6285,120 +6882,120 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 
           {activePage === "dashboard" ? (
             <div className="admin-mobile admin-dashboard">
-                <div className="dashboard-notification-row">
+              <div className="dashboard-notification-row">
+                <button
+                  type="button"
+                  className="dashboard-bell-button"
+                  onClick={() => setShowCreditLimitAlertDetails(true)}
+                  aria-label="Open credit limit notifications"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M15 17H5.8c-.7 0-1.1-.8-.7-1.4l1.2-1.8V10a5.7 5.7 0 1 1 11.4 0v3.8l1.2 1.8c.4.6 0 1.4-.7 1.4H15" />
+                    <path d="M9.5 17a2.5 2.5 0 0 0 5 0" />
+                  </svg>
+                  {creditLimitAlertSummary.count > 0 ? <span className="dashboard-bell-badge">{creditLimitAlertSummary.count > 9 ? "9+" : creditLimitAlertSummary.count}</span> : null}
+                </button>
+                <div className="dashboard-notification-copy">
+                  <strong>Notifications</strong>
+                  <span>{creditLimitAlertSummary.count ? `${creditLimitAlertSummary.count} customer limit alert${creditLimitAlertSummary.count === 1 ? "" : "s"}` : "No credit-limit alerts right now"}</span>
+                </div>
+              </div>
+              {!isManager ? (
+                <div className="dashboard-notification-row manager-access-row">
+                  <div className="dashboard-notification-copy">
+                    <strong>Manager Full Access</strong>
+                    <span>{managerFullAccessEnabled ? "Manager can use restricted admin actions" : "Manager is limited to standard manager permissions"}</span>
+                  </div>
                   <button
                     type="button"
-                    className="dashboard-bell-button"
-                    onClick={() => setShowCreditLimitAlertDetails(true)}
-                    aria-label="Open credit limit notifications"
+                    className={`manager-access-switch ${managerFullAccessEnabled ? "on" : ""}`}
+                    onClick={handleManagerFullAccessToggle}
+                    disabled={managerAccessPending}
+                    aria-pressed={managerFullAccessEnabled}
                   >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M15 17H5.8c-.7 0-1.1-.8-.7-1.4l1.2-1.8V10a5.7 5.7 0 1 1 11.4 0v3.8l1.2 1.8c.4.6 0 1.4-.7 1.4H15" />
-                      <path d="M9.5 17a2.5 2.5 0 0 0 5 0" />
-                    </svg>
-                    {creditLimitAlertSummary.count > 0 ? <span className="dashboard-bell-badge">{creditLimitAlertSummary.count > 9 ? "9+" : creditLimitAlertSummary.count}</span> : null}
+                    <span>{managerAccessPending ? "..." : managerFullAccessEnabled ? "ON" : "OFF"}</span>
                   </button>
-                  <div className="dashboard-notification-copy">
-                    <strong>Notifications</strong>
-                    <span>{creditLimitAlertSummary.count ? `${creditLimitAlertSummary.count} customer limit alert${creditLimitAlertSummary.count === 1 ? "" : "s"}` : "No credit-limit alerts right now"}</span>
+                </div>
+              ) : null}
+              {upcomingChequeSummary.count ? (
+                <button type="button" className="admin-mobile-section dashboard-headline-banner cheque-headline-banner dashboard-headline-button" onClick={() => setShowChequeAlertDetails(true)}>
+                  <strong>Cheque Alert Tomorrow</strong>
+                  <span>
+                    {upcomingChequeSummary.count} cheque{upcomingChequeSummary.count === 1 ? "" : "s"} • LKR {formatLkrValue(upcomingChequeSummary.total)} • {upcomingChequeSummary.rows[0]?.customer || "-"} • #{upcomingChequeSummary.rows[0]?.saleId || "-"} • {upcomingChequeSummary.rows[0]?.bank || "-"}
+                  </span>
+                </button>
+              ) : null}
+              <section className="admin-mobile-section dashboard-snapshot-panel">
+                <h2>Admin Snapshot</h2>
+                <div className="snapshot-layout">
+                  <div className="snapshot-grid">
+                    <article><p>Total sales</p><strong>{dashboard.salesCount}</strong></article>
+                    <article><p>Today sales</p><strong>{dashboard.todaySalesCount}</strong></article>
+                    <article className="snapshot-card-outstanding snapshot-card-outstanding-total">
+                      <p>Total Outstanding</p>
+                      <strong>{formatLkrValue(customerPageSummary.totalOutstanding || 0)}</strong>
+                      <small className="snapshot-subvalue">Without Today: {formatLkrValue(totalOutstandingExcludingToday)}</small>
+                    </article>
+                    <article className="snapshot-card-outstanding snapshot-card-outstanding-today"><p>Today Outstanding</p><strong>{formatLkrValue(dashboard.todayOutstanding || 0)}</strong></article>
+                    <article><p>Today Ordered Value</p><strong>{dashboard.todayRevenue.toFixed(0)}</strong></article>
+                    <article><p>Low Stock</p><strong>{dashboard.lowStockItems.length}</strong></article>
+                  </div>
+                  <div className="snapshot-sidecards">
+                    <div className="dashboard-profit-card">
+                      <div className="dashboard-profit-head">
+                        <div>
+                          <span className="dashboard-profit-eyebrow">Total Net Profit</span>
+                          <div className="dashboard-profit-date-range">
+                            <label className="dashboard-profit-date-field">
+                              <span>From</span>
+                              <input type="date" value={dashboardProfitDateFrom} onChange={(e) => setDashboardProfitDateFrom(e.target.value)} />
+                            </label>
+                            <label className="dashboard-profit-date-field">
+                              <span>To</span>
+                              <input type="date" value={dashboardProfitDateTo} onChange={(e) => setDashboardProfitDateTo(e.target.value)} />
+                            </label>
+                          </div>
+                        </div>
+                        <strong>LKR {formatLkrValue(dashboardProfitSummary.profit)}</strong>
+                      </div>
+                      <div className="dashboard-profit-meta">
+                        <span>Revenue <b>LKR {formatLkrValue(dashboardProfitSummary.revenue)}</b></span>
+                        <span>Invoice Cost <b>LKR {formatLkrValue(dashboardProfitSummary.cost)}</b></span>
+                      </div>
+                      <div className="dashboard-profit-foot">
+                        <span>{dashboardProfitSummary.filteredSalesCount} bill{dashboardProfitSummary.filteredSalesCount === 1 ? "" : "s"} in range</span>
+                      </div>
+                      <p>Net margin {dashboardProfitSummary.margin}%</p>
+                    </div>
+                    <button type="button" className="low-stock-card" onClick={() => setShowLowStock(true)}>
+                      <strong>Low Stock</strong>
+                      <span>Click to popup the list</span>
+                    </button>
+                    {overdueCreditSummary.count ? (
+                      <div className="dashboard-alert-card">
+                        <strong>Overdue Credit Alert</strong>
+                        <span>{overdueCreditSummary.count} customer(s) • LKR {formatLkrValue(overdueCreditSummary.total)}</span>
+                        <p>
+                          Top overdue: {overdueCreditSummary.top?.customer || "-"}
+                          {" • "}
+                          {overdueCreditSummary.top?.maxDays || 0} days
+                        </p>
+                      </div>
+                    ) : null}
+                    {creditLimitAlertSummary.count ? (
+                      <div className="dashboard-alert-card dashboard-alert-card-credit-limit">
+                        <strong>Credit Limit Exceeded</strong>
+                        <span>{creditLimitAlertSummary.count} customer(s) • LKR {formatLkrValue(creditLimitAlertSummary.totalExceeded)} over limit</span>
+                        <p>
+                          Top alert: {creditLimitAlertSummary.top?.customer || "-"}
+                          {" • exceeded by "}
+                          {formatLkrValue(creditLimitAlertSummary.top?.exceededBy || 0)}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-                {!isManager ? (
-                  <div className="dashboard-notification-row manager-access-row">
-                    <div className="dashboard-notification-copy">
-                      <strong>Manager Full Access</strong>
-                      <span>{managerFullAccessEnabled ? "Manager can use restricted admin actions" : "Manager is limited to standard manager permissions"}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className={`manager-access-switch ${managerFullAccessEnabled ? "on" : ""}`}
-                      onClick={handleManagerFullAccessToggle}
-                      disabled={managerAccessPending}
-                      aria-pressed={managerFullAccessEnabled}
-                    >
-                      <span>{managerAccessPending ? "..." : managerFullAccessEnabled ? "ON" : "OFF"}</span>
-                    </button>
-                  </div>
-                ) : null}
-                {upcomingChequeSummary.count ? (
-                  <button type="button" className="admin-mobile-section dashboard-headline-banner cheque-headline-banner dashboard-headline-button" onClick={() => setShowChequeAlertDetails(true)}>
-                    <strong>Cheque Alert Tomorrow</strong>
-                    <span>
-                      {upcomingChequeSummary.count} cheque{upcomingChequeSummary.count === 1 ? "" : "s"} • LKR {formatLkrValue(upcomingChequeSummary.total)} • {upcomingChequeSummary.rows[0]?.customer || "-"} • #{upcomingChequeSummary.rows[0]?.saleId || "-"} • {upcomingChequeSummary.rows[0]?.bank || "-"}
-                    </span>
-                  </button>
-                ) : null}
-                <section className="admin-mobile-section dashboard-snapshot-panel">
-                  <h2>Admin Snapshot</h2>
-                  <div className="snapshot-layout">
-                    <div className="snapshot-grid">
-                      <article><p>Total sales</p><strong>{dashboard.salesCount}</strong></article>
-                      <article><p>Today sales</p><strong>{dashboard.todaySalesCount}</strong></article>
-                      <article className="snapshot-card-outstanding snapshot-card-outstanding-total">
-                        <p>Total Outstanding</p>
-                        <strong>{formatLkrValue(customerPageSummary.totalOutstanding || 0)}</strong>
-                        <small className="snapshot-subvalue">Without Today: {formatLkrValue(totalOutstandingExcludingToday)}</small>
-                      </article>
-                      <article className="snapshot-card-outstanding snapshot-card-outstanding-today"><p>Today Outstanding</p><strong>{formatLkrValue(dashboard.todayOutstanding || 0)}</strong></article>
-                      <article><p>Today Ordered Value</p><strong>{dashboard.todayRevenue.toFixed(0)}</strong></article>
-                      <article><p>Low Stock</p><strong>{dashboard.lowStockItems.length}</strong></article>
-                    </div>
-                    <div className="snapshot-sidecards">
-                      <div className="dashboard-profit-card">
-                        <div className="dashboard-profit-head">
-                          <div>
-                            <span className="dashboard-profit-eyebrow">Total Net Profit</span>
-                            <div className="dashboard-profit-date-range">
-                              <label className="dashboard-profit-date-field">
-                                <span>From</span>
-                                <input type="date" value={dashboardProfitDateFrom} onChange={(e) => setDashboardProfitDateFrom(e.target.value)} />
-                              </label>
-                              <label className="dashboard-profit-date-field">
-                                <span>To</span>
-                                <input type="date" value={dashboardProfitDateTo} onChange={(e) => setDashboardProfitDateTo(e.target.value)} />
-                              </label>
-                            </div>
-                          </div>
-                          <strong>LKR {formatLkrValue(dashboardProfitSummary.profit)}</strong>
-                        </div>
-                        <div className="dashboard-profit-meta">
-                          <span>Revenue <b>LKR {formatLkrValue(dashboardProfitSummary.revenue)}</b></span>
-                          <span>Invoice Cost <b>LKR {formatLkrValue(dashboardProfitSummary.cost)}</b></span>
-                        </div>
-                        <div className="dashboard-profit-foot">
-                          <span>{dashboardProfitSummary.filteredSalesCount} bill{dashboardProfitSummary.filteredSalesCount === 1 ? "" : "s"} in range</span>
-                        </div>
-                        <p>Net margin {dashboardProfitSummary.margin}%</p>
-                      </div>
-                      <button type="button" className="low-stock-card" onClick={() => setShowLowStock(true)}>
-                        <strong>Low Stock</strong>
-                        <span>Click to popup the list</span>
-                      </button>
-                      {overdueCreditSummary.count ? (
-                        <div className="dashboard-alert-card">
-                          <strong>Overdue Credit Alert</strong>
-                          <span>{overdueCreditSummary.count} customer(s) • LKR {formatLkrValue(overdueCreditSummary.total)}</span>
-                          <p>
-                            Top overdue: {overdueCreditSummary.top?.customer || "-"}
-                            {" • "}
-                            {overdueCreditSummary.top?.maxDays || 0} days
-                          </p>
-                        </div>
-                      ) : null}
-                      {creditLimitAlertSummary.count ? (
-                        <div className="dashboard-alert-card dashboard-alert-card-credit-limit">
-                          <strong>Credit Limit Exceeded</strong>
-                          <span>{creditLimitAlertSummary.count} customer(s) • LKR {formatLkrValue(creditLimitAlertSummary.totalExceeded)} over limit</span>
-                          <p>
-                            Top alert: {creditLimitAlertSummary.top?.customer || "-"}
-                            {" • exceeded by "}
-                            {formatLkrValue(creditLimitAlertSummary.top?.exceededBy || 0)}
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
+              </section>
 
               <section className="admin-mobile-section sales-day-panel dashboard-chart-panel">
                 <h2>Sales Chart by Day</h2>
@@ -6519,383 +7116,431 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               </section>
 
               {reportSubpage === "item-wise" ? (
-              <section className="admin-mobile-section report-panel report-itemwise-panel">
-                <div className="report-head">
-                  <h2>Item Wise Report</h2>
-                  <select value={itemReportLorry} onChange={(e) => setItemReportLorry(e.target.value)}>
-                    <option value="all">All Lorries</option>
-                    {ORDER_LORRIES.map((lorryName) => <option key={lorryName} value={lorryName}>{lorryName}</option>)}
-                  </select>
-                </div>
-                <div className="rep-date-filters">
-                  <label className="rep-date-field">
-                    <span>From</span>
-                    <input type="date" value={itemDateFrom} onChange={(e) => setItemDateFrom(e.target.value)} />
-                  </label>
-                  <label className="rep-date-field">
-                    <span>To</span>
-                    <input type="date" value={itemDateTo} onChange={(e) => setItemDateTo(e.target.value)} />
-                  </label>
-                </div>
-                <input
-                  className="search-icon-input imperfect-search-input"
-                  value={itemWiseSearch}
-                  onChange={(e) => setItemWiseSearch(e.target.value)}
-                  placeholder="Search item wise report"
-                />
-                <div className="admin-table item-wise-table">
-                  <header>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "name")}>Item{sortMark("itemWise", "name")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "sku")}>SKU{sortMark("itemWise", "sku")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "qty")}>Sold Qty{sortMark("itemWise", "qty")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "bundles")}>Bundles{sortMark("itemWise", "bundles")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "singles")}>Singles{sortMark("itemWise", "singles")}</button>
-                  </header>
-                  {sortedItemWiseRows.filter((row) => matchesSearch(itemWiseSearch, row.name, row.sku, row.size, row.category)).length ? sortedItemWiseRows.filter((row) => matchesSearch(itemWiseSearch, row.name, row.sku, row.size, row.category)).map((row) => (
-                    <article key={row.key}>
-                      <span>{row.name}</span>
-                      <span>{row.sku}</span>
-                      <span>{row.qty}</span>
-                      <span>{getBundleBreakdown(row).bundles}</span>
-                      <span>{getBundleBreakdown(row).singles}</span>
-                    </article>
-                  )) : <p>No item-wise records yet.</p>}
-                </div>
-              </section>
+                <section className="admin-mobile-section report-panel report-itemwise-panel">
+                  <div className="report-head">
+                    <h2>Item Wise Report</h2>
+                    <select value={itemReportLorry} onChange={(e) => setItemReportLorry(e.target.value)}>
+                      <option value="all">All Lorries</option>
+                      {ORDER_LORRIES.map((lorryName) => <option key={lorryName} value={lorryName}>{lorryName}</option>)}
+                    </select>
+                  </div>
+                  <div className="rep-date-filters">
+                    <label className="rep-date-field">
+                      <span>From</span>
+                      <input type="date" value={itemDateFrom} onChange={(e) => setItemDateFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To</span>
+                      <input type="date" value={itemDateTo} onChange={(e) => setItemDateTo(e.target.value)} />
+                    </label>
+                  </div>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={itemWiseSearch}
+                    onChange={(e) => setItemWiseSearch(e.target.value)}
+                    placeholder="Search item wise report"
+                  />
+                  <div className="admin-table item-wise-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "name")}>Item{sortMark("itemWise", "name")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "sku")}>SKU{sortMark("itemWise", "sku")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "qty")}>Sold Qty{sortMark("itemWise", "qty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "bundles")}>Bundles{sortMark("itemWise", "bundles")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("itemWise", "singles")}>Singles{sortMark("itemWise", "singles")}</button>
+                    </header>
+                    {sortedItemWiseRows.filter((row) => matchesSearch(itemWiseSearch, row.name, row.sku, row.size, row.category)).length ? sortedItemWiseRows.filter((row) => matchesSearch(itemWiseSearch, row.name, row.sku, row.size, row.category)).map((row) => (
+                      <article key={row.key}>
+                        <span>{row.name}</span>
+                        <span>{row.sku}</span>
+                        <span>{row.qty}</span>
+                        <span>{getBundleBreakdown(row).bundles}</span>
+                        <span>{getBundleBreakdown(row).singles}</span>
+                      </article>
+                    )) : <p>No item-wise records yet.</p>}
+                  </div>
+                </section>
               ) : null}
 
               {reportSubpage === "sales-wise" ? (
-              <section className="admin-mobile-section report-panel report-saleswise-panel">
-                <h2>Sales Wise Report</h2>
-                <div className="rep-date-filters">
-                  <label className="rep-date-field">
-                    <span>From</span>
-                    <input type="date" value={salesDateFrom} onChange={(e) => setSalesDateFrom(e.target.value)} />
-                  </label>
-                  <label className="rep-date-field">
-                    <span>To</span>
-                    <input type="date" value={salesDateTo} onChange={(e) => setSalesDateTo(e.target.value)} />
-                  </label>
-                  <label className="rep-date-field">
-                    <span>From Time</span>
-                    <input type="time" value={salesTimeFrom} onChange={(e) => setSalesTimeFrom(e.target.value)} />
-                  </label>
-                  <label className="rep-date-field">
-                    <span>To Time</span>
-                    <input type="time" value={salesTimeTo} onChange={(e) => setSalesTimeTo(e.target.value)} />
-                  </label>
-                </div>
-                <div className="row" style={{ justifyContent: "flex-end", marginTop: "-0.2rem", marginBottom: "0.2rem" }}>
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => {
-                      setSalesDateFrom(loadingDateFrom || "");
-                      setSalesDateTo(loadingDateTo || "");
-                      setSalesTimeFrom(loadingTimeFrom || "");
-                      setSalesTimeTo(loadingTimeTo || "");
-                    }}
-                  >
-                    Use Loadings Date/Time Range
-                  </button>
-                </div>
-                <div className="sales-range-kpi">
-                  <span className="sales-range-kpi-label">Selected Range Total Sale Value</span>
-                  <strong className="sales-range-kpi-value">{currency(salesRangeTotal)}</strong>
-                </div>
-                <input
-                  className="search-icon-input imperfect-search-input"
-                  value={salesWiseSearch}
-                  onChange={(e) => setSalesWiseSearch(e.target.value)}
-                  placeholder="Search sales wise report"
-                />
-                <div className="admin-table sales-wise-table">
-                  <header>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "id")}>Sale ID{sortMark("salesWise", "id")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "when")}>Date{sortMark("salesWise", "when")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "lorry")}>Lorry{sortMark("salesWise", "lorry")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "total")}>Total<br />(LKR){sortMark("salesWise", "total")}</button>
-                    <span className="th-action">Actions</span>
-                  </header>
-                  {sortedSalesWiseRows.filter((row) => matchesSearch(salesWiseSearch, row.id, row.rep, row.lorry, row.when, row.raw?.customerName)).length ? sortedSalesWiseRows.filter((row) => matchesSearch(salesWiseSearch, row.id, row.rep, row.lorry, row.when, row.raw?.customerName)).slice(0, 50).map((row) => (
-                    <article key={row.id}>
-                      <span className="sales-id-cell">
-                        <strong>#{row.id}</strong>
-                        <small>{row.rep}</small>
-                      </span>
-                      <span>{row.when}</span>
-                      <span>{row.lorry}</span>
-                      <span>{formatLkrValue(row.total || 0)}</span>
-                      <span className="action-cell">
-                        <button type="button" className="ghost" onClick={() => setViewSaleId(String(row.id))}>View</button>
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={() => openAdminSaleEdit(row.raw)}
-                          disabled={Boolean(row.raw?.deliveryConfirmedAt) || Boolean((row.raw?.deliveryAdjustments || []).length) || (state.returns || []).some((ret) => String(ret.saleId) === String(row.id))}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="row-danger"
-                          onClick={() => deleteAdminSale(row.raw)}
-                          disabled={deletingSaleId === String(row.id) || Boolean(row.raw?.deliveryConfirmedAt) || Boolean((row.raw?.deliveryAdjustments || []).length)}
-                        >
-                          {deletingSaleId === String(row.id) ? "..." : "??"}
-                        </button>
-                      </span>
-                    </article>
-                  )) : <p>No sales records yet.</p>}
-                </div>
-              </section>
+                <section className="admin-mobile-section report-panel report-saleswise-panel">
+                  <h2>Sales Wise Report</h2>
+                  <div className="rep-date-filters">
+                    <label className="rep-date-field">
+                      <span>From</span>
+                      <input type="date" value={salesDateFrom} onChange={(e) => setSalesDateFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To</span>
+                      <input type="date" value={salesDateTo} onChange={(e) => setSalesDateTo(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>From Time</span>
+                      <input type="time" value={salesTimeFrom} onChange={(e) => setSalesTimeFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To Time</span>
+                      <input type="time" value={salesTimeTo} onChange={(e) => setSalesTimeTo(e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="row" style={{ justifyContent: "flex-end", marginTop: "-0.2rem", marginBottom: "0.2rem" }}>
+                    <button
+                      type="button"
+                      className="ghost"
+                      onClick={() => {
+                        setSalesDateFrom(loadingDateFrom || "");
+                        setSalesDateTo(loadingDateTo || "");
+                        setSalesTimeFrom(loadingTimeFrom || "");
+                        setSalesTimeTo(loadingTimeTo || "");
+                      }}
+                    >
+                      Use Loadings Date/Time Range
+                    </button>
+                  </div>
+                  <div className="sales-range-kpi">
+                    <span className="sales-range-kpi-label">Selected Range Total Sale Value</span>
+                    <strong className="sales-range-kpi-value">{currency(salesRangeTotal)}</strong>
+                  </div>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={salesWiseSearch}
+                    onChange={(e) => setSalesWiseSearch(e.target.value)}
+                    placeholder="Search sales wise report"
+                  />
+                  <div className="admin-table sales-wise-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "id")}>Sale ID{sortMark("salesWise", "id")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "when")}>Date{sortMark("salesWise", "when")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "lorry")}>Lorry{sortMark("salesWise", "lorry")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("salesWise", "total")}>Total<br />(LKR){sortMark("salesWise", "total")}</button>
+                      <span className="th-action">Actions</span>
+                    </header>
+                    {sortedSalesWiseRows.filter((row) => matchesSearch(salesWiseSearch, row.id, row.rep, row.lorry, row.when, row.raw?.customerName)).length ? sortedSalesWiseRows.filter((row) => matchesSearch(salesWiseSearch, row.id, row.rep, row.lorry, row.when, row.raw?.customerName)).slice(0, 50).map((row) => (
+                      <article key={row.id}>
+                        <span className="sales-id-cell">
+                          <strong>#{row.id}</strong>
+                          <small>{row.rep}</small>
+                        </span>
+                        <span>{row.when}</span>
+                        <span>{row.lorry}</span>
+                        <span>{formatLkrValue(row.total || 0)}</span>
+                        <span className="action-cell">
+                          <button type="button" className="ghost" onClick={() => setViewSaleId(String(row.id))}>View</button>
+                          <button
+                            type="button"
+                            className="ghost"
+                            onClick={() => openAdminSaleEdit(row.raw)}
+                            disabled={Boolean(row.raw?.deliveryConfirmedAt) || Boolean((row.raw?.deliveryAdjustments || []).length) || Boolean(row.raw?.preOrderConfirmedAt) || (state.returns || []).some((ret) => String(ret.saleId) === String(row.id))}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="row-danger"
+                            onClick={() => deleteAdminSale(row.raw)}
+                            disabled={deletingSaleId === String(row.id) || Boolean(row.raw?.deliveryConfirmedAt) || Boolean((row.raw?.deliveryAdjustments || []).length) || Boolean(row.raw?.preOrderConfirmedAt)}
+                          >
+                            {deletingSaleId === String(row.id) ? "..." : "??"}
+                          </button>
+                        </span>
+                      </article>
+                    )) : <p>No sales records yet.</p>}
+                  </div>
+                </section>
               ) : null}
 
               {reportSubpage === "cheque-summary" ? (
-              <section className="admin-mobile-section report-panel cheque-report-panel">
-                <h2>Cheque Summary</h2>
-                <div className="cheque-summary-grid">
-                  <article
-                    role="button"
-                    tabIndex={0}
-                    className="cheque-summary-clickable"
-                    onClick={() => setShowChequeSummaryDetails(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setShowChequeSummaryDetails(true);
-                      }
-                    }}
-                  >
-                    <span>Total Cheques</span>
-                    <strong>{chequeReportSummary.chequeCount}</strong>
-                  </article>
-                  <article>
-                    <span>Total Cheque Amount (LKR)</span>
-                    <strong>{formatLkrValue(chequeReportSummary.totalChequeAmount)}</strong>
-                  </article>
-                  <article>
-                    <span>Average Cheque (LKR)</span>
-                    <strong>{formatLkrValue(chequeReportSummary.avgChequeAmount)}</strong>
-                  </article>
-                  <article className="warn">
-                    <span>Outstanding on Cheques (LKR)</span>
-                    <strong>{formatLkrValue(chequeReportSummary.totalOutstanding)}</strong>
-                  </article>
-                </div>
-                <div className="cheque-summary-meta">
-                  <article>
-                    <span>Latest Cheque No</span>
-                    <strong>{chequeReportSummary.latestChequeNo}</strong>
-                  </article>
-                  <article>
-                    <span>Latest Cheque Date</span>
-                    <strong>{chequeReportSummary.latestChequeDate}</strong>
-                  </article>
-                  <article>
-                    <span>Latest Bank</span>
-                    <strong>{chequeReportSummary.latestChequeBank}</strong>
-                  </article>
-                </div>
-              </section>
-              ) : null}
-
-              {reportSubpage === "customer-wise" ? (
-              <section className="admin-mobile-section report-panel report-customerwise-panel">
-                <h2>Customer Wise Report</h2>
-                <input
-                  className="search-icon-input imperfect-search-input"
-                  value={customerWiseSearch}
-                  onChange={(e) => setCustomerWiseSearch(e.target.value)}
-                  placeholder="Search customer wise report"
-                />
-                <div className="admin-table customer-wise-report-table">
-                  <header>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "name")}>Customer{sortMark("customerWise", "name")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "orders")}>Orders{sortMark("customerWise", "orders")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "spent")}>Total Spent (LKR){sortMark("customerWise", "spent")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "lastAt")}>Last Purchase{sortMark("customerWise", "lastAt")}</button>
-                  </header>
-                {sortedCustomerWiseRows.filter((row) => matchesSearch(customerWiseSearch, row.name, row.lastAt)).length ? sortedCustomerWiseRows.filter((row) => matchesSearch(customerWiseSearch, row.name, row.lastAt)).map((row) => (
-                  <article key={row.name}>
-                    <span>{row.name}</span>
-                    <span>{row.orders}</span>
-                    <span>{formatLkrValue(row.spent || 0)}</span>
-                    <span>{row.lastAt ? new Date(row.lastAt).toLocaleDateString() : "-"}</span>
-                  </article>
-                )) : <p>No customer-wise records yet.</p>}
-              </div>
-                <section className="customers-summary-card">
-                  <div className="customers-summary-divider">
-                    <span>SUMMARY</span>
-                  </div>
-                  <div className="customers-summary-head">
-                    <h3>Customer Snapshot</h3>
-                    <p>Live from filtered customer records</p>
-                  </div>
-                  <div className="customers-summary-grid">
-                    <article>
-                      <span>Total Customers</span>
-                      <strong>{customerPageSummary.totalCustomers}</strong>
+                <section className="admin-mobile-section report-panel cheque-report-panel">
+                  <h2>Cheque Summary</h2>
+                  <div className="cheque-summary-grid">
+                    <article
+                      role="button"
+                      tabIndex={0}
+                      className="cheque-summary-clickable"
+                      onClick={() => setShowChequeSummaryDetails(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setShowChequeSummaryDetails(true);
+                        }
+                      }}
+                    >
+                      <span>Total Cheques</span>
+                      <strong>{chequeReportSummary.chequeCount}</strong>
                     </article>
                     <article>
-                      <span>Active Customers</span>
-                      <strong>{customerPageSummary.activeCustomers}</strong>
+                      <span>Total Cheque Amount (LKR)</span>
+                      <strong>{formatLkrValue(chequeReportSummary.totalChequeAmount)}</strong>
+                    </article>
+                    <article>
+                      <span>Average Cheque (LKR)</span>
+                      <strong>{formatLkrValue(chequeReportSummary.avgChequeAmount)}</strong>
                     </article>
                     <article className="warn">
-                      <span>With Outstanding</span>
-                      <strong>{customerPageSummary.customersWithOutstanding}</strong>
+                      <span>Outstanding on Cheques (LKR)</span>
+                      <strong>{formatLkrValue(chequeReportSummary.totalOutstanding)}</strong>
                     </article>
                   </div>
-                  <div className="customers-summary-foot">
+                  <div className="cheque-summary-meta">
                     <article>
-                      <span>Total Orders</span>
-                      <strong>{customerPageSummary.totalOrders}</strong>
-                      <p>Avg order value: {currency(customerPageSummary.averageOrderValue)}</p>
+                      <span>Latest Cheque No</span>
+                      <strong>{chequeReportSummary.latestChequeNo}</strong>
                     </article>
                     <article>
-                      <span>Total Spent</span>
-                      <strong>{currency(customerPageSummary.totalSpent)}</strong>
-                      <p className="outstanding-text">Outstanding: {currency(customerPageSummary.totalOutstanding)}</p>
+                      <span>Latest Cheque Date</span>
+                      <strong>{chequeReportSummary.latestChequeDate}</strong>
                     </article>
                     <article>
-                      <span>Top Customer</span>
-                      <strong>{customerPageSummary.topCustomerName}</strong>
-                      <p>{currency(customerPageSummary.topCustomerSpent)}</p>
+                      <span>Latest Bank</span>
+                      <strong>{chequeReportSummary.latestChequeBank}</strong>
                     </article>
                   </div>
                 </section>
-              </section>
+              ) : null}
+
+              {reportSubpage === "customer-wise" ? (
+                <section className="admin-mobile-section report-panel report-customerwise-panel">
+                  <h2>Customer Wise Report</h2>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={customerWiseSearch}
+                    onChange={(e) => setCustomerWiseSearch(e.target.value)}
+                    placeholder="Search customer wise report"
+                  />
+                  <div className="admin-table customer-wise-report-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "name")}>Customer{sortMark("customerWise", "name")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "orders")}>Orders{sortMark("customerWise", "orders")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "spent")}>Total Spent (LKR){sortMark("customerWise", "spent")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("customerWise", "lastAt")}>Last Purchase{sortMark("customerWise", "lastAt")}</button>
+                    </header>
+                    {sortedCustomerWiseRows.filter((row) => matchesSearch(customerWiseSearch, row.name, row.lastAt)).length ? sortedCustomerWiseRows.filter((row) => matchesSearch(customerWiseSearch, row.name, row.lastAt)).map((row) => (
+                      <article key={row.name}>
+                        <span>{row.name}</span>
+                        <span>{row.orders}</span>
+                        <span>{formatLkrValue(row.spent || 0)}</span>
+                        <span>{row.lastAt ? new Date(row.lastAt).toLocaleDateString() : "-"}</span>
+                      </article>
+                    )) : <p>No customer-wise records yet.</p>}
+                  </div>
+                  <section className="customers-summary-card">
+                    <div className="customers-summary-divider">
+                      <span>SUMMARY</span>
+                    </div>
+                    <div className="customers-summary-head">
+                      <h3>Customer Snapshot</h3>
+                      <p>Live from filtered customer records</p>
+                    </div>
+                    <div className="customers-summary-grid">
+                      <article>
+                        <span>Total Customers</span>
+                        <strong>{customerPageSummary.totalCustomers}</strong>
+                      </article>
+                      <article>
+                        <span>Active Customers</span>
+                        <strong>{customerPageSummary.activeCustomers}</strong>
+                      </article>
+                      <article className="warn">
+                        <span>With Outstanding</span>
+                        <strong>{customerPageSummary.customersWithOutstanding}</strong>
+                      </article>
+                    </div>
+                    <div className="customers-summary-foot">
+                      <article>
+                        <span>Total Orders</span>
+                        <strong>{customerPageSummary.totalOrders}</strong>
+                        <p>Avg order value: {currency(customerPageSummary.averageOrderValue)}</p>
+                      </article>
+                      <article>
+                        <span>Total Spent</span>
+                        <strong>{currency(customerPageSummary.totalSpent)}</strong>
+                        <p className="outstanding-text">Outstanding: {currency(customerPageSummary.totalOutstanding)}</p>
+                      </article>
+                      <article>
+                        <span>Top Customer</span>
+                        <strong>{customerPageSummary.topCustomerName}</strong>
+                        <p>{currency(customerPageSummary.topCustomerSpent)}</p>
+                      </article>
+                    </div>
+                  </section>
+                </section>
               ) : null}
 
               {reportSubpage === "rep-outstanding" ? (
-              <section className="admin-mobile-section report-panel report-rep-outstanding-panel">
-                <h2>Rep Wise Customer Outstanding</h2>
-                <input
-                  className="search-icon-input imperfect-search-input"
-                  value={repOutstandingSearch}
-                  onChange={(e) => setRepOutstandingSearch(e.target.value)}
-                  placeholder="Search rep outstanding"
-                />
-                <div className="rep-outstanding-summary-grid">
-                  <article>
-                    <span>Reps with Outstanding</span>
-                    <strong>{repOutstandingSummary.reps}</strong>
-                  </article>
-                  <article>
-                    <span>Outstanding Bills</span>
-                    <strong>{repOutstandingSummary.bills}</strong>
-                  </article>
-                  <article>
-                    <span>Affected Customers</span>
-                    <strong>{repOutstandingSummary.customers}</strong>
-                  </article>
-                  <article className="warn">
-                    <span>Total Outstanding (LKR)</span>
-                    <strong>{formatLkrValue(repOutstandingSummary.outstanding)}</strong>
-                  </article>
-                </div>
-                <div className="admin-table rep-outstanding-table">
-                  <header>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "rep")}>Rep{sortMark("repOutstanding", "rep")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "customers")}>Customers{sortMark("repOutstanding", "customers")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "bills")}>Bills{sortMark("repOutstanding", "bills")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "outstanding")}>Outstanding (LKR){sortMark("repOutstanding", "outstanding")}</button>
-                  </header>
-                  {sortedRepOutstandingRows.filter((row) => matchesSearch(repOutstandingSearch, row.rep)).length ? sortedRepOutstandingRows.filter((row) => matchesSearch(repOutstandingSearch, row.rep)).map((row) => (
-                    <article key={`rep-out-${row.rep}`}>
-                      <span>{row.rep}</span>
-                      <span
-                        className="rep-outstanding-detail-trigger"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setRepOutstandingDetailRep(row.rep)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setRepOutstandingDetailRep(row.rep);
-                          }
-                        }}
-                      >
-                        {row.customers}
-                      </span>
-                      <span>{row.bills}</span>
-                      <span className="outstanding-text">{formatLkrValue(row.outstanding)}</span>
+                <section className="admin-mobile-section report-panel report-rep-outstanding-panel">
+                  <h2>Rep Wise Customer Outstanding</h2>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={repOutstandingSearch}
+                    onChange={(e) => setRepOutstandingSearch(e.target.value)}
+                    placeholder="Search rep outstanding"
+                  />
+                  <div className="rep-outstanding-summary-grid">
+                    <article>
+                      <span>Reps with Outstanding</span>
+                      <strong>{repOutstandingSummary.reps}</strong>
                     </article>
-                  )) : <p>No rep outstanding balances in selected range.</p>}
-                </div>
-              </section>
+                    <article>
+                      <span>Outstanding Bills</span>
+                      <strong>{repOutstandingSummary.bills}</strong>
+                    </article>
+                    <article>
+                      <span>Affected Customers</span>
+                      <strong>{repOutstandingSummary.customers}</strong>
+                    </article>
+                    <article className="warn">
+                      <span>Total Outstanding (LKR)</span>
+                      <strong>{formatLkrValue(repOutstandingSummary.outstanding)}</strong>
+                    </article>
+                  </div>
+                  <div className="admin-table rep-outstanding-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "rep")}>Rep{sortMark("repOutstanding", "rep")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "customers")}>Customers{sortMark("repOutstanding", "customers")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "bills")}>Bills{sortMark("repOutstanding", "bills")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("repOutstanding", "outstanding")}>Outstanding (LKR){sortMark("repOutstanding", "outstanding")}</button>
+                    </header>
+                    {sortedRepOutstandingRows.filter((row) => matchesSearch(repOutstandingSearch, row.rep)).length ? sortedRepOutstandingRows.filter((row) => matchesSearch(repOutstandingSearch, row.rep)).map((row) => (
+                      <article key={`rep-out-${row.rep}`}>
+                        <span>{row.rep}</span>
+                        <span
+                          className="rep-outstanding-detail-trigger"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setRepOutstandingDetailRep(row.rep)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setRepOutstandingDetailRep(row.rep);
+                            }
+                          }}
+                        >
+                          {row.customers}
+                        </span>
+                        <span>{row.bills}</span>
+                        <span className="outstanding-text">{formatLkrValue(row.outstanding)}</span>
+                      </article>
+                    )) : <p>No rep outstanding balances in selected range.</p>}
+                  </div>
+                </section>
               ) : null}
 
               {reportSubpage === "delivery-report" ? (
-              <section className="admin-mobile-section report-panel report-delivery-panel">
-                <div className="delivery-report-divider">
-                  <span>DELIVERY INTELLIGENCE</span>
-                </div>
-                <div className="report-head">
-                  <h2>Delivery Report</h2>
-                  <select value={reportDeliveryLorry} onChange={(e) => setReportDeliveryLorry(e.target.value)}>
-                    <option value="all">All Lorries</option>
-                    {ORDER_LORRIES.map((lorryName) => <option key={lorryName} value={lorryName}>{lorryName}</option>)}
-                  </select>
-                </div>
-                <div className="rep-date-filters">
-                  <label className="rep-date-field">
-                    <span>From</span>
-                    <input type="date" value={reportDeliveryDateFrom} onChange={(e) => setReportDeliveryDateFrom(e.target.value)} />
-                  </label>
-                  <label className="rep-date-field">
-                    <span>To</span>
-                    <input type="date" value={reportDeliveryDateTo} onChange={(e) => setReportDeliveryDateTo(e.target.value)} />
-                  </label>
-                </div>
-                <input
-                  className="search-icon-input imperfect-search-input"
-                  value={reportDeliverySearch}
-                  onChange={(e) => setReportDeliverySearch(e.target.value)}
-                  placeholder="Search delivery report"
-                />
-                <div className="delivery-report-kpi-grid">
-                  <article><span>Total Bills</span><strong>{reportDeliverySummary.totalBills}</strong></article>
-                  <article><span>Confirmed</span><strong>{reportDeliverySummary.confirmedBills}</strong></article>
-                  <article><span>Pending</span><strong>{reportDeliverySummary.pendingBills}</strong></article>
-                  <article><span>Sold Qty</span><strong>{reportDeliverySummary.soldQtyTotal}</strong></article>
-                  <article><span>Delivered Qty</span><strong>{reportDeliverySummary.deliveredQtyTotal}</strong></article>
-                  <article><span>Undelivered Qty</span><strong>{reportDeliverySummary.undeliveredQtyTotal}</strong></article>
-                  <article><span>Delivered Value (LKR)</span><strong>{formatLkrValue(reportDeliverySummary.deliveredValueTotal)}</strong></article>
-                  <article><span>Delivery Rate</span><strong>{reportDeliverySummary.deliveryRate}%</strong></article>
-                </div>
-                <div className="admin-table delivery-report-sales-table">
-                  <header>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "id")}>Sale ID{sortMark("deliveryReport", "id")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "date")}>Date{sortMark("deliveryReport", "date")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "rep")}>Rep{sortMark("deliveryReport", "rep")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "lorry")}>Lorry{sortMark("deliveryReport", "lorry")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "status")}>Status{sortMark("deliveryReport", "status")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "soldQty")}>Sold{sortMark("deliveryReport", "soldQty")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "undeliveredQty")}>ND{sortMark("deliveryReport", "undeliveredQty")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "deliveredQty")}>Delivered{sortMark("deliveryReport", "deliveredQty")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "deliveredValue")}>Value (LKR){sortMark("deliveryReport", "deliveredValue")}</button>
-                  </header>
-                  {sortedReportDeliveryRows.filter((row) => matchesSearch(reportDeliverySearch, row.id, row.date, row.rep, row.lorry, row.status)).length ? sortedReportDeliveryRows.filter((row) => matchesSearch(reportDeliverySearch, row.id, row.date, row.rep, row.lorry, row.status)).map((row) => (
-                    <article key={`rdr-${row.id}`}>
-                      <span>#{row.id}</span>
-                      <span>{row.date}</span>
-                      <span>{row.rep}</span>
-                      <span>{row.lorry}</span>
-                      <span>
-                        <span className={row.status === "Confirmed" ? "delivery-status confirmed" : "delivery-status pending"}>
-                          {row.status}
+                <section className="admin-mobile-section report-panel report-delivery-panel">
+                  <div className="delivery-report-divider">
+                    <span>DELIVERY INTELLIGENCE</span>
+                  </div>
+                  <div className="report-head">
+                    <h2>Delivery Report</h2>
+                    <select value={reportDeliveryLorry} onChange={(e) => setReportDeliveryLorry(e.target.value)}>
+                      <option value="all">All Lorries</option>
+                      {ORDER_LORRIES.map((lorryName) => <option key={lorryName} value={lorryName}>{lorryName}</option>)}
+                    </select>
+                  </div>
+                  <div className="rep-date-filters">
+                    <label className="rep-date-field">
+                      <span>From</span>
+                      <input type="date" value={reportDeliveryDateFrom} onChange={(e) => setReportDeliveryDateFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To</span>
+                      <input type="date" value={reportDeliveryDateTo} onChange={(e) => setReportDeliveryDateTo(e.target.value)} />
+                    </label>
+                  </div>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={reportDeliverySearch}
+                    onChange={(e) => setReportDeliverySearch(e.target.value)}
+                    placeholder="Search delivery report"
+                  />
+                  <div className="delivery-report-kpi-grid">
+                    <article><span>Total Bills</span><strong>{reportDeliverySummary.totalBills}</strong></article>
+                    <article><span>Confirmed</span><strong>{reportDeliverySummary.confirmedBills}</strong></article>
+                    <article><span>Pending</span><strong>{reportDeliverySummary.pendingBills}</strong></article>
+                    <article><span>Sold Qty</span><strong>{reportDeliverySummary.soldQtyTotal}</strong></article>
+                    <article><span>Delivered Qty</span><strong>{reportDeliverySummary.deliveredQtyTotal}</strong></article>
+                    <article><span>Undelivered Qty</span><strong>{reportDeliverySummary.undeliveredQtyTotal}</strong></article>
+                    <article><span>Delivered Value (LKR)</span><strong>{formatLkrValue(reportDeliverySummary.deliveredValueTotal)}</strong></article>
+                    <article><span>Delivery Rate</span><strong>{reportDeliverySummary.deliveryRate}%</strong></article>
+                  </div>
+                  <div className="admin-table delivery-report-sales-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "id")}>Sale ID{sortMark("deliveryReport", "id")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "date")}>Date{sortMark("deliveryReport", "date")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "rep")}>Rep{sortMark("deliveryReport", "rep")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "lorry")}>Lorry{sortMark("deliveryReport", "lorry")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "status")}>Status{sortMark("deliveryReport", "status")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "soldQty")}>Sold{sortMark("deliveryReport", "soldQty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "undeliveredQty")}>ND{sortMark("deliveryReport", "undeliveredQty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "deliveredQty")}>Delivered{sortMark("deliveryReport", "deliveredQty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("deliveryReport", "deliveredValue")}>Value (LKR){sortMark("deliveryReport", "deliveredValue")}</button>
+                    </header>
+                    {sortedReportDeliveryRows.filter((row) => matchesSearch(reportDeliverySearch, row.id, row.date, row.rep, row.lorry, row.status)).length ? sortedReportDeliveryRows.filter((row) => matchesSearch(reportDeliverySearch, row.id, row.date, row.rep, row.lorry, row.status)).map((row) => (
+                      <article key={`rdr-${row.id}`}>
+                        <span>#{row.id}</span>
+                        <span>{row.date}</span>
+                        <span>{row.rep}</span>
+                        <span>{row.lorry}</span>
+                        <span>
+                          <span className={row.status === "Confirmed" ? "delivery-status confirmed" : "delivery-status pending"}>
+                            {row.status}
+                          </span>
                         </span>
-                      </span>
-                      <span>{row.soldQty}</span>
-                      <span>{row.undeliveredQty}</span>
-                      <span>{row.deliveredQty}</span>
-                      <span>{formatLkrValue(row.deliveredValue)}</span>
-                    </article>
-                  )) : <p>No delivery report records for selected filters.</p>}
-                </div>
-              </section>
+                        <span>{row.soldQty}</span>
+                        <span>{row.undeliveredQty}</span>
+                        <span>{row.deliveredQty}</span>
+                        <span>{formatLkrValue(row.deliveredValue)}</span>
+                      </article>
+                    )) : <p>No delivery report records for selected filters.</p>}
+                  </div>
+                </section>
+              ) : null}
+
+              {reportSubpage === "empty-bottle-log" ? (
+                <section className="admin-mobile-section report-panel report-empty-bottle-panel">
+                  <div className="report-head">
+                    <h2>Empty Bottle Log</h2>
+                  </div>
+                  <div className="rep-date-filters">
+                    <label className="rep-date-field">
+                      <span>From</span>
+                      <input type="date" value={emptyBottleLogDateFrom} onChange={(e) => setEmptyBottleLogDateFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To</span>
+                      <input type="date" value={emptyBottleLogDateTo} onChange={(e) => setEmptyBottleLogDateTo(e.target.value)} />
+                    </label>
+                  </div>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={emptyBottleLogSearch}
+                    onChange={(e) => setEmptyBottleLogSearch(e.target.value)}
+                    placeholder="Search by rep or customer"
+                  />
+                  <div className="delivery-report-kpi-grid">
+                    <article><span>Entries</span><strong>{emptyBottleLogSummary.entries}</strong></article>
+                    <article><span>Total Bottles Collected</span><strong>{emptyBottleLogSummary.totalQty}</strong></article>
+                    <article><span>Reps</span><strong>{emptyBottleLogSummary.collectors}</strong></article>
+                    <article><span>Customers</span><strong>{emptyBottleLogSummary.customers}</strong></article>
+                  </div>
+                  <div className="admin-table empty-bottle-log-table">
+                    <header>
+                      <span>Date/Time</span>
+                      <span>Rep</span>
+                      <span>Customer</span>
+                      <span>Bill</span>
+                      <span>Qty</span>
+                    </header>
+                    {emptyBottleLogRows.filter((row) => matchesSearch(emptyBottleLogSearch, row.collectedBy, row.customerName, row.saleId)).length ? emptyBottleLogRows.filter((row) => matchesSearch(emptyBottleLogSearch, row.collectedBy, row.customerName, row.saleId)).map((row) => (
+                      <article key={row.id}>
+                        <span>{row.when}</span>
+                        <span>{row.collectedBy || "-"}</span>
+                        <span>{row.customerName || "-"}</span>
+                        <span>#{row.saleId}</span>
+                        <span>{row.quantity}</span>
+                      </article>
+                    )) : <p>No empty bottle collections in selected range.</p>}
+                  </div>
+                </section>
               ) : null}
             </div>
           ) : null}
@@ -7025,7 +7670,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 );
               })}
             </div>
-      ) : null}
+          ) : null}
         </section>
       </main>
 
@@ -7348,62 +7993,65 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               </div>
             </div>
             <div className="receipt-preview">
-              <h4>M.W.M.B CHANDRASEKARA - MATALE DISTRIBUTOR</h4>
+              <h4>Kanishka Perera - MATALE DISTRIBUTOR</h4>
               <p>{new Date(viewedSale.createdAt).toLocaleString()} • {viewedSale.customerName} • {viewedSale.lorry || "-"} • {viewedSale.cashier || "-"} • {viewedSalePaymentDisplay.label}{viewedSalePaymentDisplay.detail ? ` (${viewedSalePaymentDisplay.detail})` : ""}</p>
               <div className="admin-table receipt-table">
                 <header>
                   <span>Item Code</span>
                   <span>Qty</span>
+                  <span>Invoice Price<br />LKR</span>
                   <span>Price<br />LKR</span>
                   <span>Item Discount</span>
                   <span>Total<br />LKR</span>
                 </header>
-                  {(viewedSale.lines || []).map((line) => {
-                    const returned = viewedSaleReturnByProduct.get(String(line.productId || "")) || { qty: 0, amount: 0 };
-                    const notDeliveredQty = Number(viewedSaleUndeliveredByProduct.get(String(line.productId || "")) || 0);
-                    const originalQty = Number(line.quantity || 0);
-                    const soldAfterDelivery = Math.max(0, originalQty - notDeliveredQty);
-                    const netQty = Math.max(0, soldAfterDelivery - Number(returned.qty || 0));
-                    const bundleSource = productInfoById.get(line.productId) || line;
-                    const bundleSize = getBundleSize(bundleSource);
-                    const bundles = bundleSize ? Math.floor(netQty / bundleSize) : 0;
-                    const singles = bundleSize ? netQty % bundleSize : netQty;
-                    const grossRemaining = Number((Number(line.price || 0) * netQty).toFixed(2));
-                    const remainingBillDiscountShare = Number(viewedSale.subTotal || 0) > 0
-                      ? Number((Number(viewedSale.discountAmount || viewedSale.discount || 0) * (grossRemaining / Number(viewedSale.subTotal || 1))).toFixed(2))
-                      : 0;
-                    const netLineAmount = Math.max(0, Number((grossRemaining - remainingBillDiscountShare).toFixed(2)));
-                    return (
-                      <article key={`${viewedSale.id}-${line.productId}`}>
-                        <span>
-                          {line.sku || productInfoById.get(line.productId)?.sku || "-"}
-                          {notDeliveredQty > 0 ? <small className="sales-return-note">Not Delivered {notDeliveredQty}</small> : null}
-                          {Number(returned.qty || 0) > 0 ? <small className="sales-return-note">Returned {returned.qty}</small> : null}
-                        </span>
-                        <span>
-                          {netQty}
-                          {bundleSize > 0 ? <small className="sales-return-note">{bundles} Bundles {singles} Singles</small> : null}
-                        </span>
-                        <span>{formatLkrValue(line.price || 0)}</span>
-                        <span>
-                          {Number(line.itemDiscount || 0) > 0 ? currency(line.itemDiscount) : "-"}
-                          {remainingBillDiscountShare > 0 ? <small className="sales-return-note">Bill disc. {formatLkrValue(remainingBillDiscountShare)}</small> : null}
-                        </span>
-                        <span>
-                          {formatLkrValue(netLineAmount || 0)}
-                          {Number(returned.amount || 0) > 0 ? <small className="sales-return-note">- {formatLkrValue(returned.amount)}</small> : null}
-                        </span>
-                      </article>
-                    );
-                  })}
+                {(viewedSale.lines || []).map((line) => {
+                  const returned = viewedSaleReturnByProduct.get(String(line.productId || "")) || { qty: 0, amount: 0 };
+                  const notDeliveredQty = Number(viewedSaleUndeliveredByProduct.get(String(line.productId || "")) || 0);
+                  const originalQty = Number(line.quantity || 0);
+                  const soldAfterDelivery = Math.max(0, originalQty - notDeliveredQty);
+                  const netQty = Math.max(0, soldAfterDelivery - Number(returned.qty || 0));
+                  const bundleSource = productInfoById.get(line.productId) || line;
+                  const bundleSize = getBundleSize(bundleSource);
+                  const bundles = bundleSize ? Math.floor(netQty / bundleSize) : 0;
+                  const singles = bundleSize ? netQty % bundleSize : netQty;
+                  const unitInvoicePrice = line.invoicePrice !== undefined ? Number(line.invoicePrice) : Number(productInfoById.get(line.productId)?.invoicePrice ?? 0);
+                  const grossRemaining = Number((Number(line.price || 0) * netQty).toFixed(2));
+                  const remainingBillDiscountShare = Number(viewedSale.subTotal || 0) > 0
+                    ? Number((Number(viewedSale.discountAmount || viewedSale.discount || 0) * (grossRemaining / Number(viewedSale.subTotal || 1))).toFixed(2))
+                    : 0;
+                  const netLineAmount = Math.max(0, Number((grossRemaining - remainingBillDiscountShare).toFixed(2)));
+                  return (
+                    <article key={`${viewedSale.id}-${line.productId}`}>
+                      <span>
+                        {line.sku || productInfoById.get(line.productId)?.sku || "-"}
+                        {notDeliveredQty > 0 ? <small className="sales-return-note">Not Delivered {notDeliveredQty}</small> : null}
+                        {Number(returned.qty || 0) > 0 ? <small className="sales-return-note">Returned {returned.qty}</small> : null}
+                      </span>
+                      <span>
+                        {netQty}
+                        {bundleSize > 0 ? <small className="sales-return-note">{bundles} Bundles {singles} Singles</small> : null}
+                      </span>
+                      <span>{formatLkrValue(unitInvoicePrice)}</span>
+                      <span>{formatLkrValue(line.price || 0)}</span>
+                      <span>
+                        {Number(line.itemDiscount || 0) > 0 ? currency(line.itemDiscount) : "-"}
+                        {remainingBillDiscountShare > 0 ? <small className="sales-return-note">Bill disc. {formatLkrValue(remainingBillDiscountShare)}</small> : null}
+                      </span>
+                      <span>
+                        {formatLkrValue(netLineAmount || 0)}
+                        {Number(returned.amount || 0) > 0 ? <small className="sales-return-note">- {formatLkrValue(returned.amount)}</small> : null}
+                      </span>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="receipt-summary-row">
+                <div className="receipt-summary-texts">
+                  <p className="form-hint">Discount: {currency(viewedSale.discount || 0)}</p>
+                  {viewedSaleReturnedAmount > 0 ? <p className="form-hint return-adjust-text">Returns: - {currency(viewedSaleReturnedAmount)}</p> : null}
+                  <p className="form-hint"><strong>Total: {currency(viewedSaleNetAmount || 0)}</strong></p>
                 </div>
-                <div className="receipt-summary-row">
-                  <div className="receipt-summary-texts">
-                    <p className="form-hint">Discount: {currency(viewedSale.discount || 0)}</p>
-                    {viewedSaleReturnedAmount > 0 ? <p className="form-hint return-adjust-text">Returns: - {currency(viewedSaleReturnedAmount)}</p> : null}
-                    <p className="form-hint"><strong>Total: {currency(viewedSaleNetAmount || 0)}</strong></p>
-                  </div>
-                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -7455,33 +8103,33 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 );
               })}
             </div>
-              <div className="delivery-settlement-panel">
-                  <div className="delivery-settlement-head">
-                    <div>
-                      <h4>Settlement At Delivery</h4>
-                    <p>Collect the delivery payment clearly before confirming this bill.</p>
-                    </div>
-                    <span className={`rep-sale-payment rep-sale-payment-${String(deliverySale.paymentType || "").toLowerCase()}`}>{deliverySale.paymentType}</span>
-                  </div>
-                <div className="delivery-settlement-kpis">
-                  <article>
-                    <span>Order Total</span>
-                    <strong>{currency(deliverySale.total || 0)}</strong>
-                  </article>
-                  <article>
-                    <span>Paid So Far</span>
-                    <strong>{currency(deliveryPaidSoFar)}</strong>
-                  </article>
-                  <article className="active">
-                    <span>This Update</span>
-                    <strong>{currency(deliveryDraftSettlement)}</strong>
-                  </article>
-                  <article className="warn">
-                    <span>Balance After</span>
-                    <strong>{currency(deliveryRemainingAfterDraft)}</strong>
-                  </article>
+            <div className="delivery-settlement-panel">
+              <div className="delivery-settlement-head">
+                <div>
+                  <h4>Settlement At Delivery</h4>
+                  <p>Collect the delivery payment clearly before confirming this bill.</p>
                 </div>
-                <div className="delivery-settlement-grid">
+                <span className={`rep-sale-payment rep-sale-payment-${String(deliverySale.paymentType || "").toLowerCase()}`}>{deliverySale.paymentType}</span>
+              </div>
+              <div className="delivery-settlement-kpis">
+                <article>
+                  <span>Order Total</span>
+                  <strong>{currency(deliverySale.total || 0)}</strong>
+                </article>
+                <article>
+                  <span>Paid So Far</span>
+                  <strong>{currency(deliveryPaidSoFar)}</strong>
+                </article>
+                <article className="active">
+                  <span>This Update</span>
+                  <strong>{currency(deliveryDraftSettlement)}</strong>
+                </article>
+                <article className="warn">
+                  <span>Balance After</span>
+                  <strong>{currency(deliveryRemainingAfterDraft)}</strong>
+                </article>
+              </div>
+              <div className="delivery-settlement-grid">
                 <label className="rep-sale-field">
                   <span>Cash Received</span>
                   <input type="number" min="0" step="0.01" value={deliveryCashReceived} onChange={(e) => setDeliveryCashReceived(e.target.value)} placeholder="0.00" />
@@ -7503,7 +8151,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <input value={deliveryChequeBank} onChange={(e) => setDeliveryChequeBank(e.target.value)} placeholder="Bank name" />
                 </label>
               </div>
-              </div>
+            </div>
             <div className="delivery-history delivery-payment-history">
               <h4>Payment History</h4>
               {deliveryPaymentRows.length ? (
@@ -7712,6 +8360,7 @@ export const App = () => {
   const [cashier, setCashier] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [lorry, setLorry] = useState("");
+  const [isPreOrderMode, setIsPreOrderMode] = useState(false);
   const [paymentType, setPaymentType] = useState(PAYMENT_TYPES[0]);
   const [cashReceived, setCashReceived] = useState("");
   const [creditDueDate, setCreditDueDate] = useState("");
@@ -7731,6 +8380,7 @@ export const App = () => {
   const [authError, setAuthError] = useState("");
   const [session, setSession] = useState(null);
   const [cashierBillingFocusMode, setCashierBillingFocusMode] = useState(false);
+  const [showPostSaleHomeButton, setShowPostSaleHomeButton] = useState(false);
   const confirmResolverRef = useRef(null);
 
   const showErrorModal = (text) => {
@@ -7765,7 +8415,7 @@ export const App = () => {
   );
   const discountAmount = useMemo(() => billDiscountValue(discountMode, discountValue, effectiveCartLines), [effectiveCartLines, discountMode, discountValue]);
   const totals = useMemo(() => calculateTotals({ lines: effectiveCartLines, taxRate, discount: discountAmount }), [effectiveCartLines, taxRate, discountAmount]);
-const selectedBillingCustomer = useMemo(() => {
+  const selectedBillingCustomer = useMemo(() => {
     const key = String(customerName || "").trim().toLowerCase();
     if (!key) return null;
     const matches = (state.customers || []).filter((item) => String(item.name || "").trim().toLowerCase() === key);
@@ -7800,8 +8450,8 @@ const selectedBillingCustomer = useMemo(() => {
     return Number(Math.max(
       0,
       liveOutstanding
-        + Number(selectedBillingCustomer?.openingOutstanding || 0)
-        - Number(selectedBillingCustomer?.outstandingAdjustment || 0)
+      + Number(selectedBillingCustomer?.openingOutstanding || 0)
+      - Number(selectedBillingCustomer?.outstandingAdjustment || 0)
     ).toFixed(2));
   }, [customerName, selectedBillingCustomer?.openingOutstanding, selectedBillingCustomer?.outstandingAdjustment, state.sales]);
   const cartDiscountTotal = useMemo(() => totalDiscountApplied({ lines: effectiveCartLines, billDiscount: discountAmount }), [effectiveCartLines, discountAmount]);
@@ -7857,6 +8507,18 @@ const selectedBillingCustomer = useMemo(() => {
     }
     return next;
   }, [state.sales, state?.settings?.lorryCountResetAt]);
+  const preOrderReservedMap = useMemo(() => {
+    const map = new Map();
+    for (const sale of (state.sales || [])) {
+      if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending") continue;
+      for (const line of (sale.lines || [])) {
+        const key = String(line.productId || "").trim();
+        if (!key) continue;
+        map.set(key, Number(map.get(key) || 0) + Number(line.quantity || 0));
+      }
+    }
+    return map;
+  }, [state.sales]);
 
   useEffect(() => {
     const handleInvalidSession = () => {
@@ -7928,7 +8590,7 @@ const selectedBillingCustomer = useMemo(() => {
     socket.on(SOCKET_EVENTS.STATE_SYNC, (next) => {
       if (mounted) setState(next);
     });
-    socket.on(SOCKET_EVENTS.SALE_CREATED, () => fetchDashboard().then((d) => mounted && setDashboard(d)).catch(() => {}));
+    socket.on(SOCKET_EVENTS.SALE_CREATED, () => fetchDashboard().then((d) => mounted && setDashboard(d)).catch(() => { }));
 
     return () => {
       mounted = false;
@@ -7956,7 +8618,7 @@ const selectedBillingCustomer = useMemo(() => {
   useEffect(() => {
     if (!session?.user || typeof window === "undefined") return undefined;
 
-    const marker = { pepsiPosGuard: true, ts: Date.now() };
+    const marker = { luckyPosGuard: true, ts: Date.now() };
     window.history.pushState(marker, "", window.location.href);
 
     const handlePopState = () => {
@@ -7966,7 +8628,7 @@ const selectedBillingCustomer = useMemo(() => {
         window.history.back();
         return;
       }
-      window.history.pushState({ pepsiPosGuard: true, ts: Date.now() }, "", window.location.href);
+      window.history.pushState({ luckyPosGuard: true, ts: Date.now() }, "", window.location.href);
     };
 
     window.addEventListener("popstate", handlePopState);
@@ -8017,7 +8679,7 @@ const selectedBillingCustomer = useMemo(() => {
         try {
           nextSession = await loginApi(payload);
           break;
-        } catch {}
+        } catch { }
       }
       if (!nextSession) throw new Error("Invalid credentials");
       setAuthSession(nextSession);
@@ -8052,6 +8714,10 @@ const selectedBillingCustomer = useMemo(() => {
       const matchedCustomer = (state.customers || []).find(
         (item) => String(item.name || "").trim().toLowerCase() === String(customerName || "").trim().toLowerCase()
       );
+      if (!matchedCustomer) {
+        showErrorModal("Select a saved customer before checkout.");
+        return;
+      }
       if (!lorry) {
         showErrorModal("Select a delivery bucket.");
         return;
@@ -8076,7 +8742,9 @@ const selectedBillingCustomer = useMemo(() => {
         showErrorModal(`${bundleDiscountViolation.lineName} exceeds bundle discount limit. Allowed ${currency(bundleDiscountViolation.allowedBundleDiscount)} for ${bundleDiscountViolation.fullBundles} bundle(s).`);
         return;
       }
-      if (selectedCustomerCreditLimit > 0) {
+      // A pre-order isn't a debt until it's confirmed at delivery (payment method
+      // isn't even chosen yet), so credit limit is enforced there instead — not here.
+      if (!isPreOrderMode && selectedCustomerCreditLimit > 0) {
         const projectedOutstanding = Number((selectedCustomerOutstandingForLimit + totalAfterCustomerCredit).toFixed(2));
         if (projectedOutstanding > selectedCustomerCreditLimit) {
           const availableCreditLimit = Math.max(0, Number((selectedCustomerCreditLimit - selectedCustomerOutstandingForLimit).toFixed(2)));
@@ -8090,23 +8758,35 @@ const selectedBillingCustomer = useMemo(() => {
         customerName,
         customerPhone: matchedCustomer?.phone ? String(matchedCustomer.phone).trim() : undefined,
         lorry,
+        orderType: isPreOrderMode ? "preorder" : "direct",
         paymentType,
         customerCreditAmount: appliedCustomerCredit,
         discount: discountAmount,
         taxRate: 0,
         lines: effectiveCartLines
       });
-      openSaleReceiptPrint({
-        sale: {
-          ...sale,
-          customerPhone: sale?.customerPhone || (matchedCustomer?.phone ? String(matchedCustomer.phone).trim() : "")
-        },
-        customers: state.customers || [],
-        products: state.products || [],
-        fallbackCustomerName: customerName,
-        onPopupBlocked: () => showErrorModal(`Sale ${sale.id} completed, but popup is blocked. Allow popups to print receipt.`)
-      });
-      showSuccessModal("Order completed.");
+      const saleWithPhone = {
+        ...sale,
+        customerPhone: sale?.customerPhone || (matchedCustomer?.phone ? String(matchedCustomer.phone).trim() : "")
+      };
+      if (isPreOrderMode) {
+        openPreOrderReceiptPrint({
+          sale: saleWithPhone,
+          customers: state.customers || [],
+          fallbackCustomerName: customerName,
+          onPopupBlocked: () => showErrorModal(`Pre-order ${sale.id} completed, but popup is blocked. Allow popups to print receipt.`)
+        });
+        showSuccessModal("Pre-order saved.");
+      } else {
+        openSaleReceiptPrint({
+          sale: saleWithPhone,
+          customers: state.customers || [],
+          products: state.products || [],
+          fallbackCustomerName: customerName,
+          onPopupBlocked: () => showErrorModal(`Sale ${sale.id} completed, but popup is blocked. Allow popups to print receipt.`)
+        });
+        showSuccessModal("Order completed.");
+      }
       setCart([]);
       setShowPostSaleHomeButton(true);
       setDiscountValue("");
@@ -8150,6 +8830,9 @@ const selectedBillingCustomer = useMemo(() => {
           setCustomerName={setCustomerName}
           lorry={lorry}
           setLorry={setLorry}
+          isPreOrderMode={isPreOrderMode}
+          setIsPreOrderMode={setIsPreOrderMode}
+          preOrderReservedMap={preOrderReservedMap}
           paymentType={paymentType}
           setPaymentType={setPaymentType}
           cashReceived={cashReceived}
@@ -8168,6 +8851,7 @@ const selectedBillingCustomer = useMemo(() => {
           setDiscountMode={setDiscountMode}
           discountValue={discountValue}
           setDiscountValue={setDiscountValue}
+          selectedCustomerCreditLimit={selectedCustomerCreditLimit}
           selectedCustomerDiscountLimit={selectedCustomerDiscountLimit}
           selectedCustomerBundleDiscountLimit={selectedCustomerBundleDiscountLimit}
           selectedCustomerAvailableCredit={selectedCustomerAvailableCredit}
@@ -8176,71 +8860,73 @@ const selectedBillingCustomer = useMemo(() => {
           setCustomerCreditDraft={setCustomerCreditDraft}
           appliedCustomerCredit={appliedCustomerCredit}
           totalAfterCustomerCredit={totalAfterCustomerCredit}
-        lorryLoadMap={lorryLoadMap}
-        currentCartQty={currentCartQty}
-        cart={cart}
-        setCart={setCart}
-        totals={totals}
-            message={message}
-            setMessage={setMessage}
-            onSaleDeleted={applyLocalSaleDelete}
-            onSuccess={showSuccessModal}
-            onLogout={logout}
-            onBillingFocusChange={setCashierBillingFocusMode}
-            requestConfirm={requestConfirm}
-            savingCheckout={savingCheckout}
-            checkout={checkout}
-          />
+          lorryLoadMap={lorryLoadMap}
+          currentCartQty={currentCartQty}
+          cart={cart}
+          setCart={setCart}
+          totals={totals}
+          message={message}
+          setMessage={setMessage}
+          onSaleDeleted={applyLocalSaleDelete}
+          onSuccess={showSuccessModal}
+          onLogout={logout}
+          onBillingFocusChange={setCashierBillingFocusMode}
+          requestConfirm={requestConfirm}
+          savingCheckout={savingCheckout}
+          showPostSaleHomeButton={showPostSaleHomeButton}
+          setShowPostSaleHomeButton={setShowPostSaleHomeButton}
+          checkout={checkout}
+        />
       ) : (
         <AdminView
-            state={state}
-            dashboard={dashboard}
-            message={message}
-            onError={showErrorModal}
-            requestConfirm={requestConfirm}
-            onSaleDeleted={applyLocalSaleDelete}
-            user={session.user}
+          state={state}
+          dashboard={dashboard}
+          message={message}
+          onError={showErrorModal}
+          requestConfirm={requestConfirm}
+          onSaleDeleted={applyLocalSaleDelete}
+          user={session.user}
         />
-        )}
-        {errorModal ? (
-          <div className="low-stock-modal" onClick={() => setErrorModal("")}>
-            <div className="low-stock-modal-card error-modal-card" onClick={(e) => e.stopPropagation()}>
+      )}
+      {errorModal ? (
+        <div className="low-stock-modal" onClick={() => setErrorModal("")}>
+          <div className="low-stock-modal-card error-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="low-stock-modal-head">
               <h3>Error</h3>
               <button type="button" onClick={() => setErrorModal("")}>Close</button>
             </div>
             <p className="error-modal-text">{errorModal}</p>
+          </div>
+        </div>
+      ) : null}
+      {successModal ? (
+        <div className="low-stock-modal" onClick={() => setSuccessModal("")}>
+          <div className="low-stock-modal-card success-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="low-stock-modal-head">
+              <h3><span className="success-modal-icon" aria-hidden="true">?</span>Success</h3>
+              <button type="button" onClick={() => setSuccessModal("")}>Close</button>
+            </div>
+            <p className="success-modal-text">{successModal}</p>
+          </div>
+        </div>
+      ) : null}
+      {confirmModal ? (
+        <div className="low-stock-modal" onClick={() => resolveConfirm(false)}>
+          <div className={`low-stock-modal-card confirm-modal-card confirm-modal-card-${confirmModal.tone || "danger"}`} onClick={(e) => e.stopPropagation()}>
+            <div className="low-stock-modal-head">
+              <h3>{confirmModal.title}</h3>
+              <button type="button" onClick={() => resolveConfirm(false)}>Close</button>
+            </div>
+            <p className="confirm-modal-text">{confirmModal.message}</p>
+            <div className="confirm-modal-actions">
+              <button type="button" className="ghost" onClick={() => resolveConfirm(false)}>{confirmModal.cancelLabel || "Cancel"}</button>
+              <button type="button" className={confirmModal.tone === "danger" ? "row-danger" : ""} onClick={() => resolveConfirm(true)}>{confirmModal.confirmLabel || "Confirm"}</button>
             </div>
           </div>
-        ) : null}
-        {successModal ? (
-          <div className="low-stock-modal" onClick={() => setSuccessModal("")}>
-            <div className="low-stock-modal-card success-modal-card" onClick={(e) => e.stopPropagation()}>
-              <div className="low-stock-modal-head">
-                <h3><span className="success-modal-icon" aria-hidden="true">?</span>Success</h3>
-                <button type="button" onClick={() => setSuccessModal("")}>Close</button>
-              </div>
-              <p className="success-modal-text">{successModal}</p>
-            </div>
-          </div>
-        ) : null}
-        {confirmModal ? (
-          <div className="low-stock-modal" onClick={() => resolveConfirm(false)}>
-            <div className={`low-stock-modal-card confirm-modal-card confirm-modal-card-${confirmModal.tone || "danger"}`} onClick={(e) => e.stopPropagation()}>
-              <div className="low-stock-modal-head">
-                <h3>{confirmModal.title}</h3>
-                <button type="button" onClick={() => resolveConfirm(false)}>Close</button>
-              </div>
-              <p className="confirm-modal-text">{confirmModal.message}</p>
-              <div className="confirm-modal-actions">
-                <button type="button" className="ghost" onClick={() => resolveConfirm(false)}>{confirmModal.cancelLabel || "Cancel"}</button>
-                <button type="button" className={confirmModal.tone === "danger" ? "row-danger" : ""} onClick={() => resolveConfirm(true)}>{confirmModal.confirmLabel || "Confirm"}</button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
-    );
-  };
+        </div>
+      ) : null}
+    </div>
+  );
+};
 
 

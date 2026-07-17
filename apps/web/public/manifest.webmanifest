@@ -1,21 +1,21 @@
 {
-  "name": "Pepsi POS",
-  "short_name": "Pepsi POS",
+  "name": "Lucky POS",
+  "short_name": "Lucky POS",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f7fa",
   "theme_color": "#005cb9",
   "icons": [
     {
-      "src": "/pepsi-title-logo-shortcut.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
+      "src": "/lucky-logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any maskable"
     },
     {
-      "src": "/pepsi-title-logo-shortcut.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
+      "src": "/lucky-logo.png",
+      "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any"
     }
   ]

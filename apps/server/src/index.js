@@ -5,7 +5,7 @@ import fs from "node:fs";
 import cors from "cors";
 import { Server } from "socket.io";
 import { nanoid } from "nanoid";
-import { SOCKET_EVENTS } from "@pepsi/shared";
+import { SOCKET_EVENTS } from "@lucky/shared";
 import { enrichSale, seedState } from "./seed.js";
 import { getState, getStoreMeta, replaceState, updateState } from "./store.js";
 import {
@@ -68,6 +68,20 @@ const buildLorryLoadMap = (state) => {
     next[lorryName] += saleQty;
   }
   return next;
+};
+
+const buildPreOrderReservedMap = (state, excludeSaleId = "") => {
+  const map = new Map();
+  for (const sale of (state.sales || [])) {
+    if (String(sale.id || "") === String(excludeSaleId || "")) continue;
+    if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending") continue;
+    for (const line of (sale.lines || [])) {
+      const key = String(line.productId || "").trim();
+      if (!key) continue;
+      map.set(key, Number(map.get(key) || 0) + Number(line.quantity || 0));
+    }
+  }
+  return map;
 };
 
 const managerHasFullAccess = (state = null) => Boolean((state || getState())?.settings?.managerFullAccess);
@@ -287,6 +301,10 @@ const calculateSaleDiscountTotal = ({ lines = [], billDiscount = 0 }) => {
 };
 
 const recalculateSaleFinancials = (sale) => {
+  // A pending pre-order hasn't been delivered or billed yet — it's a reservation of
+  // stock/intent, not a debt. Don't count it as outstanding (or against credit limits)
+  // until it's actually confirmed at delivery via /sales/:id/confirm-preorder.
+  const isPendingPreOrder = sale.orderType === "preorder" && sale.preOrderStatus === "pending";
   const payments = normalizeSalePayments(sale);
   const cashPayments = payments.filter((payment) => String(payment.method || "").toLowerCase() === "cash");
   const chequePayments = payments.filter((payment) => String(payment.method || "").toLowerCase() === "cheque");
@@ -296,10 +314,13 @@ const recalculateSaleFinancials = (sale) => {
   const latestCheque = chequePayments.length ? chequePayments[chequePayments.length - 1] : null;
   const returnedAmount = roundMoney(sale.returnedAmount || 0);
   const undeliveredAmount = computeDeliveryAdjustmentsAmount(sale);
-  const netTotalAfterReturns = roundMoney(Math.max(0, Number(sale.total || 0) - returnedAmount - undeliveredAmount));
+  // Also zero out netTotalAfterReturns for a pending pre-order — it isn't a
+  // completed sale yet, so it shouldn't inflate revenue/dashboard/report totals
+  // (which read this field via the client's saleNetTotal() helper) before delivery.
+  const netTotalAfterReturns = isPendingPreOrder ? 0 : roundMoney(Math.max(0, Number(sale.total || 0) - returnedAmount - undeliveredAmount));
   const rawPaid = totalPaymentsAmount(allPaidPayments);
   const paidAmount = roundMoney(Math.min(netTotalAfterReturns, rawPaid));
-  const outstandingAmount = roundMoney(Math.max(0, netTotalAfterReturns - paidAmount));
+  const outstandingAmount = isPendingPreOrder ? 0 : roundMoney(Math.max(0, netTotalAfterReturns - paidAmount));
   const refundDueAmount = roundMoney(Math.max(0, rawPaid - netTotalAfterReturns));
 
   return {
@@ -750,7 +771,7 @@ app.get("/customers", requireAuth, requireRole("admin"), (_req, res) => {
   res.json(getState().customers || []);
 });
 
-app.post("/customers", requireAuth, requireRole("admin", "cashier", "manager"), (req, res) => {
+app.post("/customers", requireAuth, requireRole("admin", "manager"), (req, res) => {
   const body = req.body || {};
   const name = String(body.name || "").trim();
   const phone = String(body.phone || "").trim();
@@ -780,11 +801,6 @@ app.post("/customers", requireAuth, requireRole("admin", "cashier", "manager"), 
     res.status(400).json({ message: "Customer name is required" });
     return;
   }
-  if (req.user?.role === "cashier" && (!phone || !address)) {
-    res.status(400).json({ message: "Customer mobile and address are required for rep login" });
-    return;
-  }
-
   const role = String(req.user?.role || "").toLowerCase();
   const canManageOpeningOutstanding = role === "admin" || (role === "manager" && managerHasFullAccess());
   const canManageCustomerLimits = role === "admin" || (role === "manager" && managerHasFullAccess());
@@ -1021,6 +1037,7 @@ app.delete("/staff/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res
 app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
   const body = req.body || {};
   const requestId = String(body.requestId || "").trim();
+  const orderType = String(body.orderType || "direct").trim().toLowerCase() === "preorder" ? "preorder" : "direct";
   const lines = Array.isArray(body.lines) ? body.lines : [];
   const lorry = String(body.lorry || "").trim();
   const customerPhone = String(body.customerPhone || "").trim();
@@ -1062,6 +1079,7 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
   }, 0);
   const nextSaleId = String(maxSaleNo + 1).padStart(5, "0");
   const preparedLines = [];
+  const preOrderReservedMap = orderType === "preorder" ? buildPreOrderReservedMap(state) : null;
 
   for (const line of lines) {
     const product = productMap.get(line.productId);
@@ -1074,7 +1092,14 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
       res.status(400).json({ message: `Invalid quantity for ${product.name}` });
       return;
     }
-    if (product.stock < quantity) {
+    if (orderType === "preorder") {
+      const alreadyReserved = Number(preOrderReservedMap?.get(product.id) || 0);
+      const availableForPreOrder = Math.max(0, Number(product.stock || 0) - alreadyReserved);
+      if (availableForPreOrder < quantity) {
+        res.status(409).json({ message: `Insufficient stock available for pre-order: ${product.name}. Available: ${availableForPreOrder}` });
+        return;
+      }
+    } else if (product.stock < quantity) {
       res.status(409).json({ message: `Insufficient stock for ${product.name}` });
       return;
     }
@@ -1103,7 +1128,8 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
       basePrice: Number(basePrice.toFixed(2)),
       itemDiscount: Number(discountAmount.toFixed(2)),
       itemDiscountMode,
-      price: Number(resolvedUnitPrice.toFixed(2))
+      price: Number(resolvedUnitPrice.toFixed(2)),
+      invoicePrice: product.invoicePrice !== undefined ? Number(product.invoicePrice) : 0
     });
   }
 
@@ -1123,6 +1149,15 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
     }
   }
 
+  // Direct sales are delivered immediately (stock decrements at creation), so empty
+  // bottles are owed from the moment of sale. Pre-orders aren't actually delivered
+  // yet, so their emptyBottlesOwed is computed later, at pre-order confirmation.
+  const emptyBottlesOwed = orderType === "preorder" ? 0 : preparedLines.reduce((acc, line) => {
+    const product = productMap.get(line.productId);
+    if (product && product.returnableBottle === false) return acc;
+    return acc + Number(line.quantity || 0);
+  }, 0);
+
   const prepared = enrichSale({
     id: nextSaleId,
     requestId,
@@ -1136,10 +1171,22 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
     discount: Number(body.discount || 0),
     taxRate: 0,
     payments: [],
-    lines: preparedLines
+    lines: preparedLines,
+    orderType,
+    preOrderStatus: orderType === "preorder" ? "pending" : null,
+    stockDecremented: orderType !== "preorder",
+    emptyBottlesOwed,
+    emptyBottlesCollected: 0
   });
 
   const preparedCustomerName = String(prepared.customerName || "").trim();
+  const existingPreparedCustomer = (state.customers || []).find(
+    (item) => String(item.name || "").trim().toLowerCase() === preparedCustomerName.toLowerCase()
+  );
+  if (String(req.user?.role || "").toLowerCase() === "cashier" && (!preparedCustomerName || preparedCustomerName.toLowerCase() === "walk-in" || !existingPreparedCustomer)) {
+    res.status(409).json({ message: "Select a saved customer before checkout" });
+    return;
+  }
   const customerDiscountLimit = resolveCustomerDiscountLimit({ customers: state.customers || [], customerName: preparedCustomerName });
   const customerBundleDiscountLimit = resolveCustomerBundleDiscountLimit({ customers: state.customers || [], customerName: preparedCustomerName });
   const totalDiscountApplied = calculateSaleDiscountTotal({ lines: prepared.lines, billDiscount: prepared.discountAmount ?? prepared.discount ?? 0 });
@@ -1214,10 +1261,12 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
     draft.customers = draft.customers || [];
     draft.staff = draft.staff || [];
 
-    for (const line of prepared.lines) {
-      const product = draft.products.find((item) => item.id === line.productId);
-      if (product) {
-        product.stock = Number((product.stock - line.quantity).toFixed(2));
+    if (prepared.orderType !== "preorder") {
+      for (const line of prepared.lines) {
+        const product = draft.products.find((item) => item.id === line.productId);
+        if (product) {
+          product.stock = Number((product.stock - line.quantity).toFixed(2));
+        }
       }
     }
 
@@ -1306,10 +1355,11 @@ app.patch("/sales/:id", requireAuth, requireRole("cashier", "admin", "manager"),
     return;
   }
   const hasDeliveryAdjustments = Array.isArray(sale.deliveryAdjustments) && sale.deliveryAdjustments.length > 0;
-  if (sale.deliveryConfirmedAt || hasDeliveryAdjustments) {
+  if (sale.deliveryConfirmedAt || hasDeliveryAdjustments || sale.preOrderConfirmedAt) {
     res.status(409).json({ message: "Cannot edit sale after delivery processing has started" });
     return;
   }
+  const isPendingPreOrder = sale.orderType === "preorder" && sale.stockDecremented === false;
 
   const productMap = new Map((state.products || []).map((p) => [p.id, p]));
   const oldQtyByProduct = new Map();
@@ -1353,20 +1403,39 @@ app.patch("/sales/:id", requireAuth, requireRole("cashier", "admin", "manager"),
       basePrice: Number(basePrice.toFixed(2)),
       itemDiscount: Number(discountAmount.toFixed(2)),
       itemDiscountMode,
-      price: Number(resolvedUnitPrice.toFixed(2))
+      price: Number(resolvedUnitPrice.toFixed(2)),
+      invoicePrice: product.invoicePrice !== undefined ? Number(product.invoicePrice) : 0
     });
   }
 
   const allProductIds = new Set([...oldQtyByProduct.keys(), ...newQtyByProduct.keys()]);
-  for (const productId of allProductIds) {
-    const product = productMap.get(productId);
-    if (!product) continue;
-    const oldQty = Number(oldQtyByProduct.get(productId) || 0);
-    const nextQty = Number(newQtyByProduct.get(productId) || 0);
-    const projectedStock = Number(product.stock || 0) + oldQty - nextQty;
-    if (projectedStock < 0) {
-      res.status(409).json({ message: `Insufficient stock for ${product.name}` });
-      return;
+  if (isPendingPreOrder) {
+    // Nothing was decremented from stock yet, so re-validate against the
+    // pre-order reservation pool (excluding this sale's own prior reservation)
+    // instead of diffing against product.stock.
+    const preOrderReservedMap = buildPreOrderReservedMap(state, sale.id);
+    for (const productId of allProductIds) {
+      const product = productMap.get(productId);
+      if (!product) continue;
+      const nextQty = Number(newQtyByProduct.get(productId) || 0);
+      const alreadyReserved = Number(preOrderReservedMap.get(productId) || 0);
+      const availableForPreOrder = Math.max(0, Number(product.stock || 0) - alreadyReserved);
+      if (nextQty > availableForPreOrder) {
+        res.status(409).json({ message: `Insufficient stock available for pre-order: ${product.name}. Available: ${availableForPreOrder}` });
+        return;
+      }
+    }
+  } else {
+    for (const productId of allProductIds) {
+      const product = productMap.get(productId);
+      if (!product) continue;
+      const oldQty = Number(oldQtyByProduct.get(productId) || 0);
+      const nextQty = Number(newQtyByProduct.get(productId) || 0);
+      const projectedStock = Number(product.stock || 0) + oldQty - nextQty;
+      if (projectedStock < 0) {
+        res.status(409).json({ message: `Insufficient stock for ${product.name}` });
+        return;
+      }
     }
   }
 
@@ -1427,6 +1496,15 @@ app.patch("/sales/:id", requireAuth, requireRole("cashier", "admin", "manager"),
     }
   }
 
+  // Keep emptyBottlesOwed in sync with the edited line quantities. Pending
+  // pre-orders stay at 0 (nothing delivered yet); emptyBottlesCollected is left
+  // untouched since it reflects bottles physically already collected.
+  const editedEmptyBottlesOwed = isPendingPreOrder ? 0 : preparedLines.reduce((acc, line) => {
+    const product = productMap.get(line.productId);
+    if (product && product.returnableBottle === false) return acc;
+    return acc + Number(line.quantity || 0);
+  }, 0);
+
   const recalculated = recalculateSaleFinancials(enrichSale({
     ...sale,
     paymentType: nextPaymentType || sale.paymentType,
@@ -1434,19 +1512,22 @@ app.patch("/sales/:id", requireAuth, requireRole("cashier", "admin", "manager"),
     discountAmount: nextBillDiscount,
     payments: nextPayments,
     lines: preparedLines,
-    taxRate: 0
+    taxRate: 0,
+    emptyBottlesOwed: editedEmptyBottlesOwed
   }));
 
   const next = updateState((draft) => {
     const idx = draft.sales.findIndex((item) => String(item.id) === String(id));
     if (idx === -1) return draft;
 
-    for (const productId of allProductIds) {
-      const product = draft.products.find((p) => p.id === productId);
-      if (!product) continue;
-      const oldQty = Number(oldQtyByProduct.get(productId) || 0);
-      const nextQty = Number(newQtyByProduct.get(productId) || 0);
-      product.stock = Number((Number(product.stock || 0) + oldQty - nextQty).toFixed(2));
+    if (!isPendingPreOrder) {
+      for (const productId of allProductIds) {
+        const product = draft.products.find((p) => p.id === productId);
+        if (!product) continue;
+        const oldQty = Number(oldQtyByProduct.get(productId) || 0);
+        const nextQty = Number(newQtyByProduct.get(productId) || 0);
+        product.stock = Number((Number(product.stock || 0) + oldQty - nextQty).toFixed(2));
+      }
     }
 
     if (existingCreditPayment) {
@@ -1490,9 +1571,13 @@ app.delete("/sales/:id", requireAuth, requireRole("admin", "cashier", "manager")
       return;
     }
   }
-  const hasDeliveryProcessing = Boolean(sale.deliveryConfirmedAt) || (Array.isArray(sale.deliveryAdjustments) && sale.deliveryAdjustments.length > 0);
+  const hasDeliveryProcessing = Boolean(sale.deliveryConfirmedAt) || (Array.isArray(sale.deliveryAdjustments) && sale.deliveryAdjustments.length > 0) || Boolean(sale.preOrderConfirmedAt);
   if (hasDeliveryProcessing) {
     res.status(409).json({ message: "Cannot delete sale after delivery processing has started" });
+    return;
+  }
+  if (Number(sale.emptyBottlesCollected || 0) > 0) {
+    res.status(409).json({ message: "Cannot delete sale after empty bottles have been collected against it" });
     return;
   }
 
@@ -1506,14 +1591,18 @@ app.delete("/sales/:id", requireAuth, requireRole("admin", "cashier", "manager")
   const creditPayment = normalizeSalePayments(sale).find((payment) => String(payment.method || "").toLowerCase() === "customer_credit");
 
   const next = updateState((draft) => {
-    // Restore only net sold qty not already returned.
-    for (const line of (sale.lines || [])) {
-      const product = draft.products.find((item) => item.id === line.productId);
-      if (!product) continue;
-      const sold = Number(line.quantity || 0);
-      const alreadyReturned = Number(returnedByProduct.get(line.productId) || 0);
-      const netSold = Math.max(0, sold - alreadyReturned);
-      product.stock = Number((Number(product.stock || 0) + netSold).toFixed(2));
+    // Restore only net sold qty not already returned. Pending pre-orders never
+    // decremented stock at creation (stockDecremented === false), so deleting
+    // one must not add stock back — there is nothing to restore.
+    if (sale.stockDecremented !== false) {
+      for (const line of (sale.lines || [])) {
+        const product = draft.products.find((item) => item.id === line.productId);
+        if (!product) continue;
+        const sold = Number(line.quantity || 0);
+        const alreadyReturned = Number(returnedByProduct.get(line.productId) || 0);
+        const netSold = Math.max(0, sold - alreadyReturned);
+        product.stock = Number((Number(product.stock || 0) + netSold).toFixed(2));
+      }
     }
     if (creditPayment?.usagePlan?.length) {
       draft.customerCredits = draft.customerCredits || [];
@@ -1527,6 +1616,265 @@ app.delete("/sales/:id", requireAuth, requireRole("admin", "cashier", "manager")
   io.emit(SOCKET_EVENTS.INVENTORY_UPDATED, next.products);
   sendFullSync();
   res.json({ ok: true, id: String(id) });
+});
+
+app.post("/sales/:id/confirm-preorder", requireAuth, requireRole("cashier", "admin", "manager"), (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const state = getState();
+  const sale = (state.sales || []).find((item) => String(item.id) === String(id));
+  if (!sale) {
+    res.status(404).json({ message: "Sale not found" });
+    return;
+  }
+  if (req.user?.role === "cashier") {
+    const saleCashier = String(sale.cashier || "").trim().toLowerCase();
+    const actingUser = String(req.user?.username || "").trim().toLowerCase();
+    if (!saleCashier || saleCashier !== actingUser) {
+      res.status(403).json({ message: "You can confirm only your own pre-orders" });
+      return;
+    }
+  }
+  if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending") {
+    res.status(409).json({ message: "This sale is not a pending pre-order" });
+    return;
+  }
+
+  const requestedLines = Array.isArray(body.lines) ? body.lines : [];
+  const deliveredQtyOverrides = new Map();
+  for (const line of requestedLines) {
+    const productId = String(line.productId || "").trim();
+    if (!productId) continue;
+    const quantity = Number(line.quantity);
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      res.status(400).json({ message: `Invalid delivered quantity for ${productId}` });
+      return;
+    }
+    deliveredQtyOverrides.set(productId, quantity);
+  }
+
+  const deliveredLines = [];
+  const shortLines = [];
+  for (const line of (sale.lines || [])) {
+    const orderedQty = Number(line.quantity || 0);
+    const deliveredQty = deliveredQtyOverrides.has(line.productId)
+      ? deliveredQtyOverrides.get(line.productId)
+      : orderedQty;
+    if (deliveredQty > orderedQty) {
+      res.status(400).json({ message: `Delivered quantity for ${line.name || line.productId} cannot exceed ordered quantity (${orderedQty})` });
+      return;
+    }
+    if (deliveredQty > 0) {
+      deliveredLines.push({ ...line, quantity: deliveredQty });
+    }
+    const shortQty = Number((orderedQty - deliveredQty).toFixed(2));
+    if (shortQty > 0) {
+      shortLines.push({ productId: line.productId, name: line.name, quantity: shortQty });
+    }
+  }
+
+  if (!deliveredLines.length) {
+    res.status(400).json({ message: "Nothing was delivered. Delete the pre-order instead of confirming an empty delivery." });
+    return;
+  }
+
+  const paymentMethod = String(body.paymentMethod || "").trim().toLowerCase();
+  if (!["cash", "cheque", "credit"].includes(paymentMethod)) {
+    res.status(400).json({ message: "paymentMethod must be cash, cheque, or credit" });
+    return;
+  }
+
+  const recalculatedSale = enrichSale({
+    ...sale,
+    lines: deliveredLines,
+    discount: sale.discountAmount ?? sale.discount ?? 0,
+    taxRate: sale.taxRate ?? 0
+  });
+  const deliveredTotal = roundMoney(recalculatedSale.total || 0);
+
+  const payments = [];
+  let chequeNo = "";
+  let chequeDate = "";
+  let chequeBank = "";
+
+  if (paymentMethod === "cash") {
+    const cashReceived = roundMoney(Number(body.cashReceived || 0));
+    if (!Number.isFinite(cashReceived) || cashReceived < 0) {
+      res.status(400).json({ message: "cashReceived must be 0 or more" });
+      return;
+    }
+    if (cashReceived > deliveredTotal + 0.01) {
+      res.status(400).json({ message: `Cash received cannot exceed the delivered bill total (${deliveredTotal.toFixed(2)})` });
+      return;
+    }
+    if (cashReceived > 0) {
+      payments.push({
+        id: nanoid(12),
+        method: "cash",
+        amount: cashReceived,
+        createdAt: new Date().toISOString(),
+        receivedBy: req.user?.username || "system"
+      });
+    }
+  } else if (paymentMethod === "cheque") {
+    chequeNo = String(body.chequeNo || "").trim();
+    chequeDate = String(body.chequeDate || "").trim();
+    chequeBank = String(body.chequeBank || "").trim();
+    if (!chequeNo || !chequeDate || !chequeBank) {
+      res.status(400).json({ message: "Cheque number, date, and bank are required" });
+      return;
+    }
+    payments.push({
+      id: nanoid(12),
+      method: "cheque",
+      amount: deliveredTotal,
+      chequeNo,
+      chequeDate,
+      chequeBank,
+      createdAt: new Date().toISOString(),
+      receivedBy: req.user?.username || "system"
+    });
+  }
+  // paymentMethod === "credit": no payment recorded now; full amount sits as outstanding.
+
+  const paidNow = paymentMethod === "cash" ? Number(payments[0]?.amount || 0)
+    : paymentMethod === "cheque" ? deliveredTotal
+    : 0;
+  const remainingAfterPayment = roundMoney(Math.max(0, deliveredTotal - paidNow));
+  const preparedCustomerName = String(sale.customerName || "").trim();
+  if (remainingAfterPayment > 0 && (!preparedCustomerName || preparedCustomerName.toLowerCase() === "walk-in")) {
+    res.status(409).json({ message: "Outstanding balance can only be tracked for saved customers. Select a saved customer or collect full payment." });
+    return;
+  }
+
+  // Credit limit is only meaningful once real debt is created, i.e. at confirmation
+  // (pending pre-orders carry 0 outstanding) — enforce it here using the same rule
+  // POST /sales applies to direct sales.
+  if (remainingAfterPayment > 0) {
+    const creditProfile = resolveCustomerCreditProfile({ customers: state.customers || [], customerName: preparedCustomerName });
+    if (Number(creditProfile.creditLimit || 0) > 0) {
+      const currentOutstanding = calculateCustomerOutstanding({
+        sales: state.sales || [],
+        customers: state.customers || [],
+        customerName: preparedCustomerName
+      });
+      const projectedOutstanding = roundMoney(currentOutstanding + remainingAfterPayment);
+      if (projectedOutstanding > roundMoney(creditProfile.creditLimit)) {
+        const availableCreditLimit = roundMoney(Math.max(0, Number(creditProfile.creditLimit || 0) - currentOutstanding));
+        res.status(409).json({
+          message: `Credit limit exceeded for ${preparedCustomerName}. Limit: ${roundMoney(creditProfile.creditLimit).toFixed(2)}, outstanding: ${currentOutstanding.toFixed(2)}, available: ${availableCreditLimit.toFixed(2)}`
+        });
+        return;
+      }
+    }
+  }
+
+  const productMap = new Map((state.products || []).map((p) => [p.id, p]));
+  const emptyBottlesOwed = deliveredLines.reduce((acc, line) => {
+    const product = productMap.get(line.productId);
+    if (product && product.returnableBottle === false) return acc;
+    return acc + Number(line.quantity || 0);
+  }, 0);
+
+  let updatedSale = null;
+  const next = updateState((draft) => {
+    const idx = (draft.sales || []).findIndex((item) => String(item.id) === String(id));
+    if (idx === -1) return draft;
+    const target = draft.sales[idx];
+
+    if (target.stockDecremented === false) {
+      for (const line of deliveredLines) {
+        const product = draft.products.find((item) => item.id === line.productId);
+        if (product) {
+          product.stock = Number((Number(product.stock || 0) - Number(line.quantity || 0)).toFixed(2));
+        }
+      }
+    }
+
+    const merged = {
+      ...target,
+      ...recalculatedSale,
+      id: target.id,
+      orderType: "preorder",
+      preOrderStatus: "confirmed",
+      preOrderConfirmedAt: new Date().toISOString(),
+      preOrderConfirmedBy: req.user?.username || "system",
+      preOrderShortLines: shortLines,
+      paymentType: paymentMethod,
+      payments,
+      chequeNo,
+      chequeDate,
+      chequeBank,
+      stockDecremented: true,
+      emptyBottlesOwed,
+      emptyBottlesCollected: 0
+    };
+    const finalSale = { ...merged, ...recalculateSaleFinancials(merged) };
+    draft.sales[idx] = finalSale;
+    updatedSale = finalSale;
+    return draft;
+  });
+
+  io.emit(SOCKET_EVENTS.INVENTORY_UPDATED, next.products);
+  sendFullSync();
+  res.json(updatedSale);
+});
+
+app.post("/sales/:id/collect-empty-bottles", requireAuth, requireRole("cashier", "admin", "manager"), (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const state = getState();
+  const sale = (state.sales || []).find((item) => String(item.id) === String(id));
+  if (!sale) {
+    res.status(404).json({ message: "Sale not found" });
+    return;
+  }
+  if (req.user?.role === "cashier") {
+    const saleCashier = String(sale.cashier || "").trim().toLowerCase();
+    const actingUser = String(req.user?.username || "").trim().toLowerCase();
+    if (!saleCashier || saleCashier !== actingUser) {
+      res.status(403).json({ message: "You can collect empty bottles only for your own bills" });
+      return;
+    }
+  }
+
+  const quantity = Number(body.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    res.status(400).json({ message: "quantity must be greater than 0" });
+    return;
+  }
+
+  const owed = Number(sale.emptyBottlesOwed || 0);
+  const alreadyCollected = Number(sale.emptyBottlesCollected || 0);
+  const outstanding = Math.max(0, roundMoney(owed - alreadyCollected));
+  if (quantity > outstanding) {
+    res.status(409).json({ message: `Cannot collect more than the outstanding empty bottles (${outstanding} available)` });
+    return;
+  }
+
+  let updatedSale = null;
+  const next = updateState((draft) => {
+    const idx = (draft.sales || []).findIndex((item) => String(item.id) === String(id));
+    if (idx === -1) return draft;
+    const target = draft.sales[idx];
+    target.emptyBottlesCollected = roundMoney(Number(target.emptyBottlesCollected || 0) + quantity);
+    updatedSale = target;
+
+    draft.emptyBottleCollections = draft.emptyBottleCollections || [];
+    draft.emptyBottleCollections.unshift({
+      id: nanoid(12),
+      saleId: target.id,
+      customerName: target.customerName || "",
+      quantity,
+      collectedBy: req.user?.username || "system",
+      createdAt: new Date().toISOString()
+    });
+
+    return draft;
+  });
+
+  sendFullSync();
+  res.json(updatedSale || (next.sales || []).find((item) => String(item.id) === String(id)));
 });
 
 app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) => {
@@ -1553,6 +1901,10 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
   const actingUser = String(req.user?.username || "").trim().toLowerCase();
   if (!saleCashier || saleCashier !== actingUser) {
     res.status(403).json({ message: "Only the rep who created this sale can return its items" });
+    return;
+  }
+  if (sale.orderType === "preorder" && sale.preOrderStatus === "pending") {
+    res.status(409).json({ message: "Cannot return items from a pre-order that hasn't been delivered yet" });
     return;
   }
 
@@ -1686,6 +2038,10 @@ app.post("/sales/:id/delivery-adjust", requireAuth, requireRole("admin", "manage
   const sale = (state.sales || []).find((item) => String(item.id) === String(id));
   if (!sale) {
     res.status(404).json({ message: "Sale not found" });
+    return;
+  }
+  if (sale.orderType === "preorder") {
+    res.status(409).json({ message: "Pre-order sales must be confirmed via the pre-order confirmation flow, not delivery adjustment" });
     return;
   }
 
@@ -1857,7 +2213,9 @@ app.get("/dashboard", requireAuth, (_req, res) => {
 
   const today = toColomboDateKey();
   const todaySales = sales.filter((sale) => toColomboDateKey(sale.createdAt) === today);
-  const todayRevenue = todaySales.reduce((acc, sale) => acc + Number(sale.total || 0), 0);
+  // netTotalAfterReturns (not the raw total) so returns/undelivered adjustments and
+  // still-pending pre-orders (which are 0 until confirmed) don't inflate revenue.
+  const todayRevenue = todaySales.reduce((acc, sale) => acc + Number(sale.netTotalAfterReturns || 0), 0);
   const todayOutstanding = todaySales.reduce((acc, sale) => acc + Number(sale.outstandingAmount || 0), 0);
 
   const lowStockItems = state.products.filter((item) => item.stock <= 25);

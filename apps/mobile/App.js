@@ -1,10 +1,11 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { io } from "socket.io-client";
-import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@pepsi/shared";
+import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@lucky/shared";
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "http://10.0.2.2:4010";
+const ORDER_LORRIES = ["Lorry A", "Lorry A Overflow", "Lorry B", "Lorry B Overflow"];
 const currency = (value) => `LKR ${Number(value || 0).toFixed(2)}`;
 const productSalePrice = (product) => Number(product?.billingPrice ?? product?.price ?? product?.mrp ?? 0);
 const lineBasePrice = (line) => Number(line?.basePrice ?? line?.price ?? 0);
@@ -22,8 +23,8 @@ const LoginScreen = ({ onSubmit, error, apiBase }) => {
 
   return (
     <View style={styles.loginWrap}>
-      <Image source={require("./assets/Pepsi.png")} style={styles.mobileLogo} resizeMode="contain" />
-      <Text style={styles.loginTitle}>Pepsi POS</Text>
+      <Image source={require("./assets/lucky-logo.png")} style={styles.mobileLogo} resizeMode="contain" />
+      <Text style={styles.loginTitle}>Lucky POS</Text>
       <Text style={styles.loginHint}>API: {apiBase}</Text>
       <Text style={styles.loginFieldLabel}>Credentials</Text>
       <TextInput value={username} onChangeText={setUsername} placeholder="Username" style={styles.input} autoCapitalize="none" />
@@ -44,12 +45,11 @@ export default function App() {
   const [cart, setCart] = useState([]);
   const [discount, setDiscount] = useState("0");
   const [catalogQtyDrafts, setCatalogQtyDrafts] = useState({});
+  const [lorry, setLorry] = useState("");
   const [paymentType, setPaymentType] = useState("cash");
   const [cashReceived, setCashReceived] = useState("");
   const [creditDueDate, setCreditDueDate] = useState("");
-  const [customerName, setCustomerName] = useState("Walk-in");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [message, setMessage] = useState("");
 
   const refreshSession = async () => {
@@ -215,6 +215,11 @@ export default function App() {
   const savedCustomers = useMemo(() => {
     return [...(state.customers || [])].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
   }, [state.customers]);
+  const selectedSavedCustomer = useMemo(() => {
+    const key = String(customerName || "").trim().toLowerCase();
+    if (!key) return null;
+    return (state.customers || []).find((item) => String(item.name || "").trim().toLowerCase() === key) || null;
+  }, [customerName, state.customers]);
   const customerOutstandingMap = useMemo(() => {
     const map = new Map();
     for (const sale of (state.sales || [])) {
@@ -286,6 +291,14 @@ export default function App() {
   const checkout = async () => {
     const cashier = session?.user?.username || "";
     try {
+      if (!selectedSavedCustomer) {
+        setMessage("Select a saved customer before checkout.");
+        return;
+      }
+      if (!lorry) {
+        setMessage("Select a delivery lorry.");
+        return;
+      }
       if (paymentType === "cash") {
         const paid = Number(cashReceived || 0);
         if (!Number.isFinite(paid) || paid < 0) {
@@ -302,6 +315,9 @@ export default function App() {
         body: JSON.stringify({
           cashier,
           customerName,
+          customerPhone: selectedSavedCustomer?.phone || undefined,
+          lorry,
+          orderType: "direct",
           paymentType,
           cashReceived: paymentType === "cash" ? Number(cashReceived || 0) : undefined,
           creditDueDate: paymentType === "credit" ? creditDueDate : undefined,
@@ -320,27 +336,6 @@ export default function App() {
     }
   };
 
-  const addCustomer = async () => {
-    const name = (customerName || "").trim();
-    const phone = (customerPhone || "").trim();
-    const address = (customerAddress || "").trim();
-    if (!name || !phone || !address) {
-      setMessage("Customer name, mobile, and address are required.");
-      return;
-    }
-    try {
-      await fetchJson("/customers", {
-        method: "POST",
-        body: JSON.stringify({ name, phone, address })
-      });
-      setMessage(`Customer ${name} saved.`);
-      setCustomerPhone("");
-      setCustomerAddress("");
-    } catch (error) {
-      setMessage(error.message);
-    }
-  };
-
   if (!session) {
     return (
       <View style={styles.app}>
@@ -354,8 +349,8 @@ export default function App() {
     <View style={styles.app}>
       <StatusBar style="dark" />
       <View style={styles.topRow}>
-        <Image source={require("./assets/Pepsi.png")} style={styles.topLogo} resizeMode="contain" />
-        <Text style={styles.title}>Pepsi POS - Android ({session.user?.role})</Text>
+        <Image source={require("./assets/lucky-logo.png")} style={styles.topLogo} resizeMode="contain" />
+        <Text style={styles.title}>Lucky POS - Android ({session.user?.role})</Text>
         <TouchableOpacity onPress={logout} style={styles.logout}>
           <Text style={styles.logoutLabel}>Logout</Text>
         </TouchableOpacity>
@@ -377,14 +372,18 @@ export default function App() {
                   </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+          </View>
           ) : null}
-          <TextInput value={customerPhone} onChangeText={setCustomerPhone} placeholder="Mobile" style={styles.input} keyboardType="phone-pad" />
-          <TextInput value={customerAddress} onChangeText={setCustomerAddress} placeholder="Address" style={styles.input} />
-          <TouchableOpacity style={styles.secondary} onPress={addCustomer}>
-            <Text style={styles.secondaryLabel}>Save Customer</Text>
-          </TouchableOpacity>
+          {customerName.trim() && !selectedSavedCustomer ? <Text style={styles.outstandingText}>Select an existing saved customer.</Text> : null}
           <TextInput value={discount} onChangeText={setDiscount} placeholder="Bill Discount" keyboardType="numeric" style={styles.input} />
+          <Text style={styles.meta}>Delivery lorry</Text>
+          <View style={styles.row}>
+            {ORDER_LORRIES.map((name) => (
+              <TouchableOpacity key={name} onPress={() => setLorry(name)} style={[styles.chip, lorry === name && styles.chipActive]}>
+                <Text style={lorry === name ? styles.chipLabelActive : styles.chipLabel}>{name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
           <View style={styles.row}>
             {PAYMENT_TYPES.map((type) => (
               <TouchableOpacity key={type} onPress={() => setPaymentType(type)} style={[styles.chip, paymentType === type && styles.chipActive]}>

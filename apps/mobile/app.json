@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Pepsi POS",
-    "slug": "pepsi-pos",
+    "name": "Lucky POS",
+    "slug": "lucky-pos",
     "version": "1.0.0",
     "orientation": "portrait",
     "android": {
-      "package": "com.pepsi.distributor.pos"
+      "package": "com.lucky.distributor.pos"
     },
     "ios": {
       "supportsTablet": true

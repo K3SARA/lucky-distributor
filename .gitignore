@@ -10,3 +10,7 @@ apps/server/node_modules
 .expo
 npm-debug.log*
 apps/server/auth-data.json
+apps/server/data.json
+apps/server/data.backup*.json
+.codex-logs
+Local Run Code

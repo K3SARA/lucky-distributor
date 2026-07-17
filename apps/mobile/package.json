@@ -1,5 +1,5 @@
 {
-  "name": "@pepsi/mobile",
+  "name": "@lucky/mobile",
   "version": "1.0.0",
   "private": true,
   "main": "expo/AppEntry.js",
@@ -9,11 +9,11 @@
     "ios": "expo start --ios"
   },
   "dependencies": {
-    "@pepsi/shared": "1.0.0",
+    "@lucky/shared": "1.0.0",
     "expo": "^53.0.0",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
-    "react-native": "0.79.0",
+    "react-native": "0.79.6",
     "socket.io-client": "^4.8.1"
   }
 }

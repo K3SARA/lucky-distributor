@@ -1,5 +1,5 @@
 {
-  "name": "pepsi-pos-platform",
+  "name": "lucky-pos-platform",
   "private": true,
   "workspaces": [
     "apps/*",
@@ -15,5 +15,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1"
   }
 }

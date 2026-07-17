@@ -1,17 +1,22 @@
-﻿import { calculateTotals, DEFAULT_TAX_RATE } from "@pepsi/shared";
+import { calculateTotals, DEFAULT_TAX_RATE } from "@lucky/shared";
 
 export const seedState = {
   settings: {
-    businessName: "Pepsi Distributor POS",
+    businessName: "Lucky Distributor POS",
     currency: "LKR",
     taxRate: DEFAULT_TAX_RATE
   },
   products: [
-    { id: "p-001", name: "Pepsi 500ml", sku: "PEP500", category: "Soft Drinks", price: 1.5, billingPrice: 1.2, mrp: 1.5, stock: 420 },
-    { id: "p-002", name: "Pepsi 1.5L", sku: "PEP1500", category: "Soft Drinks", price: 2.9, billingPrice: 2.35, mrp: 2.9, stock: 280 },
-    { id: "p-003", name: "7UP 500ml", sku: "7UP500", category: "Soft Drinks", price: 1.45, billingPrice: 1.15, mrp: 1.45, stock: 300 },
-    { id: "p-004", name: "Mirinda Orange 500ml", sku: "MIR500", category: "Soft Drinks", price: 1.4, billingPrice: 1.1, mrp: 1.4, stock: 250 },
-    { id: "p-005", name: "Aquafina 1L", sku: "AQ1000", category: "Water", price: 1.1, billingPrice: 0.85, mrp: 1.1, stock: 350 }
+    { id: "p-001", name: "Lucky chocolate kalkiri", size: "250 ml", sku: "LCK250", category: "Kalkiri", price: 120, billingPrice: 110, mrp: 120, stock: 100 },
+    { id: "p-002", name: "Lucky vanilla kalkiri", size: "250 ml", sku: "LVK250", category: "Kalkiri", price: 120, billingPrice: 110, mrp: 120, stock: 100 },
+    { id: "p-003", name: "Lucky falooda kalkiri", size: "250 ml", sku: "LFK250", category: "Kalkiri", price: 120, billingPrice: 110, mrp: 120, stock: 100 },
+    { id: "p-004", name: "Lucky mango kalkiri", size: "250 ml", sku: "LMK250", category: "Kalkiri", price: 120, billingPrice: 110, mrp: 120, stock: 100 },
+    { id: "p-005", name: "Lucky cardamom kalkiri", size: "250 ml", sku: "LCARDK250", category: "Kalkiri", price: 120, billingPrice: 110, mrp: 120, stock: 100 },
+    { id: "p-006", name: "Lucky chocolate kalkiri", size: "1800 ml", sku: "LCK1800", category: "Kalkiri", price: 700, billingPrice: 650, mrp: 700, stock: 100 },
+    { id: "p-007", name: "Lucky vanilla kalkiri", size: "180 ml", sku: "LVK180", category: "Kalkiri", price: 90, billingPrice: 82, mrp: 90, stock: 100 },
+    { id: "p-008", name: "Lucky mixed fruit", size: "200 ml", sku: "LMF200", category: "Juice", price: 100, billingPrice: 90, mrp: 100, stock: 100 },
+    { id: "p-009", name: "Lucky mango", size: "200 ml", sku: "LM200", category: "Juice", price: 100, billingPrice: 90, mrp: 100, stock: 100 },
+    { id: "p-010", name: "Lucky aloe vera", size: "200 ml", sku: "LAV200", category: "Juice", price: 100, billingPrice: 90, mrp: 100, stock: 100 }
   ],
   sales: [],
   returns: [],

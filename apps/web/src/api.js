@@ -146,6 +146,18 @@ export const submitDeliveryAdjustment = (id, payload) =>
     body: JSON.stringify(payload)
   });
 
+export const confirmPreorder = (id, payload) =>
+  request(`/sales/${id}/confirm-preorder`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+export const collectEmptyBottles = (id, payload) =>
+  request(`/sales/${id}/collect-empty-bottles`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
 export const submitReturn = (payload) =>
   request("/returns", {
     method: "POST",
