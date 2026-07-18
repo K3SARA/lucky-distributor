@@ -443,6 +443,26 @@ const saleCustomerCreditApplied = (sale) => Number(
     .reduce((acc, payment) => acc + Number(payment.amount || 0), 0)
     .toFixed(2)
 );
+// Buckets a whole bill into cash / cheque / credit for the bottle-payment report.
+// A bill sold on credit that's still outstanding stays "credit". Once it's fully
+// settled, it moves to whichever method (cash or cheque) paid the larger share -
+// mixed cash+cheque settlements aren't split per-bill, the dominant method wins.
+const saleBottlePaymentBucket = (sale) => {
+  const paymentType = String(sale?.paymentType || "").trim().toLowerCase();
+  if (paymentType === "cash") return "cash";
+  if (paymentType === "cheque") return "cheque";
+  const outstanding = Number(sale?.outstandingAmount || 0);
+  if (outstanding > 0.009) return "credit";
+  const payments = salePayments(sale).filter((payment) => Number(payment.amount || 0) > 0);
+  const cashTotal = payments
+    .filter((payment) => String(payment.method || "").toLowerCase() === "cash")
+    .reduce((acc, payment) => acc + Number(payment.amount || 0), 0);
+  const chequeTotal = payments
+    .filter((payment) => String(payment.method || "").toLowerCase() === "cheque")
+    .reduce((acc, payment) => acc + Number(payment.amount || 0), 0);
+  if (cashTotal === 0 && chequeTotal === 0) return "credit";
+  return chequeTotal > cashTotal ? "cheque" : "cash";
+};
 const localDateKey = (value) => {
   const date = value instanceof Date ? new Date(value) : new Date(value || Date.now());
   if (Number.isNaN(date.getTime())) return "";
@@ -3248,6 +3268,7 @@ const CashierView = ({
 
 const REPORT_SUBPAGES = [
   { id: "item-wise", label: "Item Wise Report" },
+  { id: "bottle-payment", label: "Bottle Payment Report" },
   { id: "sales-wise", label: "Sales Wise Report" },
   { id: "cheque-summary", label: "Cheque Summary" },
   { id: "customer-wise", label: "Customer Wise Report" },
@@ -3269,6 +3290,9 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [itemReportLorry, setItemReportLorry] = useState("all");
   const [itemDateFrom, setItemDateFrom] = useState("");
   const [itemDateTo, setItemDateTo] = useState("");
+  const [bottleReportDateFrom, setBottleReportDateFrom] = useState("");
+  const [bottleReportDateTo, setBottleReportDateTo] = useState("");
+  const [bottleReportSearch, setBottleReportSearch] = useState("");
   const [salesDateFrom, setSalesDateFrom] = useState("");
   const [salesDateTo, setSalesDateTo] = useState("");
   const [salesTimeFrom, setSalesTimeFrom] = useState("");
@@ -3565,6 +3589,45 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     }
     return [...map.values()].sort((a, b) => b.qty - a.qty);
   }, [itemReportLorry, itemReportSales, productInfoById, state.returns]);
+
+  const bottleReportSales = useMemo(
+    () => (state.sales || []).filter((sale) => inDateRange(sale.createdAt, bottleReportDateFrom, bottleReportDateTo)),
+    [state.sales, bottleReportDateFrom, bottleReportDateTo]
+  );
+
+  const bottleReportRows = useMemo(() => {
+    const map = new Map();
+    for (const sale of bottleReportSales) {
+      const bucket = saleBottlePaymentBucket(sale);
+      const returnedByProduct = saleReturnedQtyByProduct(sale, state.returns || []);
+      const undeliveredByProduct = saleUndeliveredQtyByProduct(sale);
+      for (const line of (sale.lines || [])) {
+        const key = line.productId || line.name;
+        const info = productInfoById.get(line.productId) || { name: line.name || "Unknown Item", sku: "-", size: "", category: "" };
+        const row = map.get(key) || {
+          key, name: info.name, sku: info.sku, size: info.size || "", category: info.category || "",
+          totalQty: 0, cashQty: 0, chequeQty: 0, creditQty: 0
+        };
+        const effectiveQty = effectiveSaleLineState(sale, line, { returnedByProduct, undeliveredByProduct }).effectiveQty;
+        row.totalQty += effectiveQty;
+        if (bucket === "cash") row.cashQty += effectiveQty;
+        else if (bucket === "cheque") row.chequeQty += effectiveQty;
+        else row.creditQty += effectiveQty;
+        map.set(key, row);
+      }
+    }
+    return [...map.values()].sort((a, b) => b.totalQty - a.totalQty);
+  }, [bottleReportSales, productInfoById, state.returns]);
+
+  const bottleReportTotals = useMemo(
+    () => bottleReportRows.reduce((acc, row) => ({
+      totalQty: acc.totalQty + row.totalQty,
+      cashQty: acc.cashQty + row.cashQty,
+      chequeQty: acc.chequeQty + row.chequeQty,
+      creditQty: acc.creditQty + row.creditQty
+    }), { totalQty: 0, cashQty: 0, chequeQty: 0, creditQty: 0 }),
+    [bottleReportRows]
+  );
 
   const loadingRowsByLorry = useMemo(() => {
     const loadingMarks = state?.settings?.loadingRowMarks || {};
@@ -4261,6 +4324,18 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       }
     }),
     [itemWiseRows, tableSort]
+  );
+
+  const sortedBottleReportRows = useMemo(
+    () => sortRows(bottleReportRows, "bottlePayment", "name", {
+      name: (row) => row.name,
+      sku: (row) => row.sku,
+      totalQty: (row) => Number(row.totalQty || 0),
+      cashQty: (row) => Number(row.cashQty || 0),
+      chequeQty: (row) => Number(row.chequeQty || 0),
+      creditQty: (row) => Number(row.creditQty || 0)
+    }),
+    [bottleReportRows, tableSort]
   );
 
   const sortedSalesWiseRows = useMemo(
@@ -7231,6 +7306,72 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                         <span>{getBundleBreakdown(row).singles}</span>
                       </article>
                     )) : <p>No item-wise records yet.</p>}
+                  </div>
+                </section>
+              ) : null}
+
+              {reportSubpage === "bottle-payment" ? (
+                <section className="admin-mobile-section report-panel report-bottlepayment-panel">
+                  <div className="report-head">
+                    <h2>Bottle Payment Report</h2>
+                  </div>
+                  <div className="rep-date-filters">
+                    <label className="rep-date-field">
+                      <span>From</span>
+                      <input type="date" value={bottleReportDateFrom} onChange={(e) => setBottleReportDateFrom(e.target.value)} />
+                    </label>
+                    <label className="rep-date-field">
+                      <span>To</span>
+                      <input type="date" value={bottleReportDateTo} onChange={(e) => setBottleReportDateTo(e.target.value)} />
+                    </label>
+                  </div>
+                  <div className="rep-chart-metrics">
+                    <article>
+                      <span>Total Bottles Sold</span>
+                      <strong>{bottleReportTotals.totalQty}</strong>
+                    </article>
+                    <article>
+                      <span>Cashed Bottles</span>
+                      <strong>{bottleReportTotals.cashQty}</strong>
+                    </article>
+                    <article>
+                      <span>Chequed Bottles</span>
+                      <strong>{bottleReportTotals.chequeQty}</strong>
+                    </article>
+                    <article>
+                      <span>Credited Bottles</span>
+                      <strong>{bottleReportTotals.creditQty}</strong>
+                    </article>
+                  </div>
+                  <p className="form-hint">
+                    A credit bill moves from Credited to Cashed or Chequed once it's fully settled - whichever
+                    method paid the larger share of that bill.
+                  </p>
+                  <input
+                    className="search-icon-input imperfect-search-input"
+                    value={bottleReportSearch}
+                    onChange={(e) => setBottleReportSearch(e.target.value)}
+                    placeholder="Search bottle payment report"
+                  />
+                  <div className="admin-table bottle-payment-table">
+                    <header>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("bottlePayment", "name")}>Item{sortMark("bottlePayment", "name")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("bottlePayment", "sku")}>SKU{sortMark("bottlePayment", "sku")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("bottlePayment", "totalQty")}>Total Sold{sortMark("bottlePayment", "totalQty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("bottlePayment", "cashQty")}>Cashed{sortMark("bottlePayment", "cashQty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("bottlePayment", "chequeQty")}>Chequed{sortMark("bottlePayment", "chequeQty")}</button>
+                      <button type="button" className="th-sort" onClick={() => toggleSort("bottlePayment", "creditQty")}>Credited{sortMark("bottlePayment", "creditQty")}</button>
+                    </header>
+                    {sortedBottleReportRows.filter((row) => matchesSearch(bottleReportSearch, row.name, row.sku, row.size, row.category)).length ? sortedBottleReportRows.filter((row) => matchesSearch(bottleReportSearch, row.name, row.sku, row.size, row.category)).map((row) => (
+                      <article key={row.key}>
+                        <span>{row.name}</span>
+                        <span>{row.sku}</span>
+                        <span>{row.totalQty}</span>
+                        <span>{row.cashQty}</span>
+                        <span>{row.chequeQty}</span>
+                        <span className={row.creditQty > 0 ? "outstanding-text" : ""}>{row.creditQty}</span>
+                      </article>
+                    )) : <p>No bottle payment records yet.</p>}
                   </div>
                 </section>
               ) : null}
