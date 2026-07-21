@@ -3,12 +3,27 @@ import { Image, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, Styl
 import { StatusBar } from "expo-status-bar";
 import { io } from "socket.io-client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ThermalPrinter } from "@finan-me/react-native-thermal-printer";
 import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@lucky/shared";
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "http://10.0.2.2:4010";
 const ORDER_LORRIES = ["Lorry A", "Lorry A Overflow", "Lorry B", "Lorry B Overflow"];
 const PRINTER_STORAGE_KEY = "lucky_pos_printer";
+
+// @finan-me/react-native-thermal-printer throws at import time when its native
+// module isn't linked (e.g. in Expo Go, which only ships Expo's own SDK
+// modules). Load it lazily so the rest of the app still works there - only
+// printing itself becomes unavailable until you're running the real dev
+// client build.
+let cachedThermalPrinter;
+const getThermalPrinter = () => {
+  if (cachedThermalPrinter !== undefined) return cachedThermalPrinter;
+  try {
+    cachedThermalPrinter = require("@finan-me/react-native-thermal-printer").ThermalPrinter;
+  } catch {
+    cachedThermalPrinter = null;
+  }
+  return cachedThermalPrinter;
+};
 const currency = (value) => `LKR ${Number(value || 0).toFixed(2)}`;
 const productSalePrice = (product) => Number(product?.billingPrice ?? product?.price ?? product?.mrp ?? 0);
 const lineBasePrice = (line) => Number(line?.basePrice ?? line?.price ?? 0);
@@ -140,6 +155,11 @@ export default function App() {
   }, []);
 
   const scanForPrinters = async () => {
+    const printer = getThermalPrinter();
+    if (!printer) {
+      setMessage("Bluetooth printing isn't available here (e.g. Expo Go) - install the dev client build to use it.");
+      return;
+    }
     try {
       const hasPermission = await requestBluetoothPermissions();
       if (!hasPermission) {
@@ -147,7 +167,7 @@ export default function App() {
         return;
       }
       setPrinterScanning(true);
-      const { paired = [], found = [] } = await ThermalPrinter.scanDevices();
+      const { paired = [], found = [] } = await printer.scanDevices();
       const seen = new Set();
       const devices = [...paired, ...found].filter((device) => {
         const key = String(device?.address || "");
@@ -180,13 +200,18 @@ export default function App() {
 
   const printReceipt = async (sale) => {
     if (!sale) return;
+    const printer = getThermalPrinter();
+    if (!printer) {
+      setMessage("Bluetooth printing isn't available here (e.g. Expo Go) - install the dev client build to use it.");
+      return;
+    }
     if (!printerAddress) {
       setMessage("Connect a printer first.");
       return;
     }
     try {
       setPrinterBusy(true);
-      const result = await ThermalPrinter.printReceipt({
+      const result = await printer.printReceipt({
         printers: [{
           address: printerAddress,
           options: { paperWidthMm: 80, encoding: "utf8" }
