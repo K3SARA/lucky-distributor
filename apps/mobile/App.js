@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
+import { Image, Modal, PermissionsAndroid, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { io } from "socket.io-client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ThermalPrinter } from "@finan-me/react-native-thermal-printer";
 import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@lucky/shared";
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE || "http://10.0.2.2:4010";
 const ORDER_LORRIES = ["Lorry A", "Lorry A Overflow", "Lorry B", "Lorry B Overflow"];
+const PRINTER_STORAGE_KEY = "lucky_pos_printer";
 const currency = (value) => `LKR ${Number(value || 0).toFixed(2)}`;
 const productSalePrice = (product) => Number(product?.billingPrice ?? product?.price ?? product?.mrp ?? 0);
 const lineBasePrice = (line) => Number(line?.basePrice ?? line?.price ?? 0);
@@ -15,6 +18,67 @@ const productDisplayName = (product) => {
   const name = String(product?.name || "").trim();
   const size = String(product?.size || "").trim();
   return size ? `${name} ${size}` : name;
+};
+
+// Classic Bluetooth SPP printers (e.g. Xprinter XP-P801A) only work on Android -
+// iOS restricts Bluetooth Classic to MFi-certified accessories, which these aren't.
+const requestBluetoothPermissions = async () => {
+  if (Platform.OS !== "android") return true;
+  if (Platform.Version >= 31) {
+    const granted = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
+    ]);
+    return (
+      granted["android.permission.BLUETOOTH_SCAN"] === "granted"
+      && granted["android.permission.BLUETOOTH_CONNECT"] === "granted"
+    );
+  }
+  const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+  return granted === "granted";
+};
+
+// Native scan results return a bare MAC address (no scheme prefix); the
+// library's print job needs it prefixed with the transport scheme.
+const toPrinterAddress = (device) => {
+  const raw = String(device?.address || "").trim();
+  if (!raw) return "";
+  return /^(bt|ble|lan):/i.test(raw) ? raw : `bt:${raw}`;
+};
+
+const buildReceiptDocument = (sale) => {
+  const lines = Array.isArray(sale?.lines) ? sale.lines : [];
+  const rows = lines.map((line) => [
+    String(line?.name || "").slice(0, 20),
+    String(Number(line?.quantity || 0)),
+    currency(Number(line?.price || 0)),
+    currency(Number(line?.price || 0) * Number(line?.quantity || 0))
+  ]);
+  const createdAt = new Date(sale?.createdAt || Date.now());
+  return [
+    { type: "text", content: "Lucky Distributor", style: { align: "center", bold: true, size: 2 } },
+    { type: "text", content: "MATALE DISTRIBUTOR", style: { align: "center" } },
+    { type: "line" },
+    { type: "text", content: `Customer: ${sale?.customerName || "Walk-in"}` },
+    { type: "text", content: `Date: ${Number.isNaN(createdAt.getTime()) ? "-" : createdAt.toLocaleString()}` },
+    { type: "text", content: `Rep: ${sale?.cashier || "-"}` },
+    { type: "text", content: `Bill No: ${sale?.id || "-"}` },
+    { type: "line" },
+    {
+      type: "table",
+      headers: ["Item", "Qty", "Price", "Total"],
+      rows,
+      columnWidths: [40, 15, 20, 25],
+      alignments: ["left", "center", "right", "right"]
+    },
+    { type: "line" },
+    { type: "text", content: `TOTAL: ${currency(sale?.total)}`, style: { bold: true, size: 2 } },
+    { type: "text", content: `Payment: ${String(sale?.paymentType || "").toUpperCase()}` },
+    { type: "feed", lines: 2 },
+    { type: "text", content: "Thank you!", style: { align: "center" } },
+    { type: "feed", lines: 3 },
+    { type: "cut" }
+  ];
 };
 
 const LoginScreen = ({ onSubmit, error, apiBase }) => {
@@ -51,6 +115,94 @@ export default function App() {
   const [creditDueDate, setCreditDueDate] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [message, setMessage] = useState("");
+  const [printerAddress, setPrinterAddress] = useState("");
+  const [printerName, setPrinterName] = useState("");
+  const [printerScanning, setPrinterScanning] = useState(false);
+  const [printerBusy, setPrinterBusy] = useState(false);
+  const [printerDevices, setPrinterDevices] = useState([]);
+  const [showPrinterPicker, setShowPrinterPicker] = useState(false);
+  const [lastSale, setLastSale] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PRINTER_STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved?.address) {
+          setPrinterAddress(saved.address);
+          setPrinterName(saved.name || saved.address);
+        }
+      } catch {
+        // ignore corrupt/missing storage - user can just reconnect
+      }
+    })();
+  }, []);
+
+  const scanForPrinters = async () => {
+    try {
+      const hasPermission = await requestBluetoothPermissions();
+      if (!hasPermission) {
+        setMessage("Bluetooth permission is required to find the printer.");
+        return;
+      }
+      setPrinterScanning(true);
+      const { paired = [], found = [] } = await ThermalPrinter.scanDevices();
+      const seen = new Set();
+      const devices = [...paired, ...found].filter((device) => {
+        const key = String(device?.address || "");
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setPrinterDevices(devices);
+      setShowPrinterPicker(true);
+    } catch (error) {
+      setMessage(error.message || "Unable to scan for printers.");
+    } finally {
+      setPrinterScanning(false);
+    }
+  };
+
+  const selectPrinter = async (device) => {
+    const address = toPrinterAddress(device);
+    if (!address) return;
+    setPrinterAddress(address);
+    setPrinterName(device.name || address);
+    setShowPrinterPicker(false);
+    try {
+      await AsyncStorage.setItem(PRINTER_STORAGE_KEY, JSON.stringify({ address, name: device.name || "" }));
+    } catch {
+      // non-fatal - printer still works this session, just won't persist
+    }
+    setMessage(`Printer connected: ${device.name || address}`);
+  };
+
+  const printReceipt = async (sale) => {
+    if (!sale) return;
+    if (!printerAddress) {
+      setMessage("Connect a printer first.");
+      return;
+    }
+    try {
+      setPrinterBusy(true);
+      const result = await ThermalPrinter.printReceipt({
+        printers: [{
+          address: printerAddress,
+          options: { paperWidthMm: 80, encoding: "utf8" }
+        }],
+        documents: [buildReceiptDocument(sale)]
+      });
+      if (!result?.success) {
+        throw new Error("Printer did not confirm the print job.");
+      }
+      setMessage(`Printed receipt for ${sale.id}.`);
+    } catch (error) {
+      setMessage(error.message || "Unable to print receipt.");
+    } finally {
+      setPrinterBusy(false);
+    }
+  };
 
   const refreshSession = async () => {
     if (!session?.refreshToken) return null;
@@ -327,6 +479,7 @@ export default function App() {
         })
       });
       setMessage(`Sale ${sale.id} posted. ${currency(sale.total)}`);
+      setLastSale(sale);
       setCart([]);
       setDiscount("0");
       setCashReceived("");
@@ -356,10 +509,47 @@ export default function App() {
         </TouchableOpacity>
       </View>
       {message ? <Text style={styles.notice}>{message}</Text> : null}
+      <View style={styles.printerRow}>
+        <Text style={styles.printerStatusText}>
+          Printer: {printerName || "Not connected"}
+        </Text>
+        <TouchableOpacity style={styles.smallButton} onPress={scanForPrinters} disabled={printerScanning}>
+          <Text style={styles.smallButtonLabel}>{printerScanning ? "Scanning..." : printerAddress ? "Change" : "Connect"}</Text>
+        </TouchableOpacity>
+      </View>
+      <Modal visible={showPrinterPicker} transparent animationType="fade" onRequestClose={() => setShowPrinterPicker(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.heading}>Select Printer</Text>
+            {printerDevices.length ? printerDevices.map((device) => (
+              <TouchableOpacity
+                key={device.address}
+                style={styles.item}
+                onPress={() => selectPrinter(device)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemName}>{device.name || "Unnamed device"}</Text>
+                  <Text style={styles.itemMeta}>{device.address}</Text>
+                </View>
+              </TouchableOpacity>
+            )) : <Text style={styles.itemMeta}>No devices found. Make sure the printer is on and paired in Android Bluetooth settings.</Text>}
+            <TouchableOpacity style={styles.secondary} onPress={() => setShowPrinterPicker(false)}>
+              <Text style={styles.secondaryLabel}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
           <Text style={styles.heading}>Checkout</Text>
           <Text style={styles.meta}>Cashier: {session.user?.username || "-"}</Text>
+          {lastSale ? (
+            <TouchableOpacity style={styles.secondary} onPress={() => printReceipt(lastSale)} disabled={printerBusy}>
+              <Text style={styles.secondaryLabel}>
+                {printerBusy ? "Printing..." : `Print Receipt (${lastSale.id})`}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           <TextInput value={customerName} onChangeText={setCustomerName} placeholder="Customer" style={styles.input} />
           {customerName.trim() ? <Text style={styles.outstandingText}>Outstanding: {currency(selectedCustomerOutstanding)}</Text> : null}
           {customerOptions.length ? (
@@ -513,6 +703,10 @@ const styles = StyleSheet.create({
   logoutLabel: { color: "#fff", fontWeight: "700", fontSize: 12 },
   content: { padding: 12, gap: 12 },
   notice: { marginHorizontal: 16, marginTop: 6, backgroundColor: "#d5ebff", padding: 8, borderRadius: 8, color: "#0d4d86" },
+  printerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginHorizontal: 16, marginTop: 6, gap: 8 },
+  printerStatusText: { color: "#34516d", fontWeight: "600", flex: 1 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 20 },
+  modalCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, gap: 8, maxHeight: "80%" },
   card: { backgroundColor: "#fff", borderRadius: 14, padding: 12, gap: 8, borderColor: "#cad6e2", borderWidth: 1 },
   heading: { fontSize: 17, fontWeight: "700", color: "#19324d" },
   meta: { color: "#34516d", fontWeight: "600" },

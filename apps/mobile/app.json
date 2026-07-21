@@ -9,6 +9,9 @@
     },
     "ios": {
       "supportsTablet": true
-    }
+    },
+    "plugins": [
+      "./plugins/withThermalPrinterPermissions"
+    ]
   }
 }
