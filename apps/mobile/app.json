@@ -15,8 +15,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "d13e12a8-7d93-4aeb-9bd8-13d515d1f0ec"
+        "projectId": "bd1eb92c-3c19-4f4a-997e-cc913ed3767b"
       }
-    }
+    },
+    "owner": "navin99"
   }
 }
