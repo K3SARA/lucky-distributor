@@ -10,11 +10,21 @@ import {
   createCustomer,
   createProduct,
   createStaff,
+  createAccount,
+  createAccounting,
   deleteAuthUser,
   deleteCustomer,
   deleteSale,
   deleteStaff,
+  deleteAccount,
+  deleteAccounting,
   deleteProduct,
+  createSupplier,
+  updateSupplier,
+  deleteSupplier,
+  createPurchase,
+  updatePurchase,
+  deletePurchase,
   fetchAppConfig,
   fetchDashboard,
   fetchMe,
@@ -34,6 +44,8 @@ import {
   updateCustomer,
   updateAuthUser,
   updateStaff,
+  updateAccount,
+  updateAccounting,
   resetLorryCount,
   resetAllData,
   setLoadingRowMark
@@ -45,6 +57,29 @@ const formatLkrValue = (value) => Number(value || 0).toLocaleString("en-US", {
 });
 const currency = (value) => `LKR ${formatLkrValue(value)}`;
 const SESSION_KEY = "lucky_pos_session";
+
+const CHART_OF_ACCOUNTS = {
+  "Operating Expenses": {
+    "Vehicle Expenses": ["Lorry Fuel", "Maintenance & Repairs", "Insurance", "Licensing", "Tolls/Parking"],
+    "Office Expenses": ["Rent", "Electricity", "Water", "Internet & Phone", "Office Supplies"],
+    "Meals & Entertainment": ["Staff Meals", "Client Meetings"]
+  },
+  "Marketing & Promotions": {
+    "Advertising": ["Print Media", "Digital Ads"],
+    "Promotions": ["Event Sponsorship", "Customer Gifts"]
+  },
+  "Financial & Professional": {
+    "Fees": ["Bank Charges", "Accounting/Audit Fees", "Legal Fees"],
+    "Taxes": ["Local Taxes", "Income Tax"]
+  },
+  "Payroll & Staff": {
+    "Salaries": ["Staff Salary"],
+    "Advances": ["Staff Advance"]
+  },
+  "Miscellaneous": {
+    "Other": ["General Expense"]
+  }
+};
 const BUSINESS_TIME_ZONE = "Asia/Colombo";
 const colomboDateFormatter = new Intl.DateTimeFormat("en-CA", {
   timeZone: BUSINESS_TIME_ZONE,
@@ -484,10 +519,71 @@ const matchesSearch = (term, ...values) => {
   return values.some((value) => String(value ?? "").toLowerCase().includes(query));
 };
 
+export const openPayslipPrint = ({ entry, staff }) => {
+  if (typeof window === "undefined" || !entry || !staff) return;
+  const toMoney = (value) => formatLkrValue(value);
+  
+  const entryDate = new Date(entry.date);
+  const monthName = entryDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+  
+  const escapeHtml = (unsafe) => {
+    return String(unsafe)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  };
+
+  const receiptHtml = `<!DOCTYPE html><html><head><title>Payslip</title>
+<style>
+@media print { @page { margin: 0; size: 80mm auto; } body { margin: 0; padding: 0; } }
+body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; color: #111; line-height: 1.4; max-width: 80mm; margin: 0 auto; padding: 12px; }
+.center { text-align: center; }
+.title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.15; }
+.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+.meta { margin-top: 10px; font-size: 14px; line-height: 1.5; border-top: 1px dashed #111; border-bottom: 1px dashed #111; padding: 6px 0; }
+.totals-grid { margin-top: 12px; }
+.summary-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.summary-row.is-deduction { color: #d32f2f; }
+.summary-total { margin-top: 8px; display: flex; justify-content: space-between; font-weight: 900; font-size: 17px; border-top: 1px solid #111; padding-top: 6px; }
+.sign-box { margin-top: 36px; display: flex; justify-content: space-between; }
+.sign-col { width: 45%; text-align: center; }
+.sign-line { border-bottom: 1px dotted #111; height: 20px; margin-bottom: 4px; }
+.sign-label { font-size: 12px; font-weight: 600; }
+.powered { text-align: center; font-size: 11px; margin-top: 24px; color: #444; }
+</style></head><body><div class="sheet">
+<div class="center"><div class="title">Lucky Distributor</div><div class="tag">Payslip</div></div>
+<div class="meta">
+Staff Name: ${escapeHtml(staff.name)}<br/>
+Role: ${escapeHtml(staff.role || "Staff")}<br/>
+Date: ${escapeHtml(entry.date)}<br/>
+Period: ${escapeHtml(monthName)}
+</div>
+<div class="totals-grid">
+<div class="summary-row"><span>Base Salary</span><strong>LKR ${toMoney(staff.monthlySalary || 0)}</strong></div>
+<div class="summary-row is-deduction"><span>Advances</span><strong>- LKR ${toMoney((staff.monthlySalary || 0) - entry.amount)}</strong></div>
+<div class="summary-total"><span>Net Pay</span><span>LKR ${toMoney(entry.amount)}</span></div>
+</div>
+<div class="sign-box"><div class="sign-col"><div class="sign-line"></div><div class="sign-label">Employer Sign</div></div><div class="sign-col"><div class="sign-line"></div><div class="sign-label">Staff Sign</div></div></div>
+<div class="powered">Powered By J&amp;Co.</div>
+</div></body></html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(receiptHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 250);
+};
+
 const openSaleReceiptPrint = ({
   sale,
   customers = [],
   products = [],
+  allSales = [],
   fallbackCustomerName = "",
   onPopupBlocked = () => { },
   returnByProduct = new Map(),
@@ -579,62 +675,110 @@ const openSaleReceiptPrint = ({
   ];
 
   const rowsHtml = lines
-    .map((line) => `<tr><td>${escapeHtml(line.sku)}${line.undeliveredQty > 0 ? `<div class="return-print-note">Not Delivered ${line.undeliveredQty}</div>` : ""}${line.returnedQty > 0 ? `<div class="return-print-note">Returned ${line.returnedQty}</div>` : ""}</td><td>${line.bundleSize > 0 ? `<div class="qty-breakdown-large">${line.bundles} Bundles ${line.singles} Singles</div>` : `<div class="qty-breakdown-large">${line.singles} Singles</div>`}</td><td>${toMoney(line.billingPrice)}</td><td>${toMoney(line.itemDiscount)}${hasAdjustedLines && line.billDiscountShare > 0 ? `<div class="return-print-note">Bill disc. ${toMoney(line.billDiscountShare)}</div>` : ""}</td><td>${toMoney(line.total)}${hasAdjustedLines && line.returnedAmount > 0 ? `<div class="return-print-note">- ${toMoney(line.returnedAmount)}</div>` : ""}</td></tr>`)
+    .map((line) => {
+      const extraNotes = [];
+      if (line.undeliveredQty > 0) extraNotes.push(`Not Delivered ${line.undeliveredQty}`);
+      if (line.returnedQty > 0) extraNotes.push(`Returned ${line.returnedQty}`);
+      if (hasAdjustedLines && line.billDiscountShare > 0) extraNotes.push(`Bill disc. ${toMoney(line.billDiscountShare)}`);
+      if (hasAdjustedLines && line.returnedAmount > 0) extraNotes.push(`- ${toMoney(line.returnedAmount)}`);
+
+      const notesHtml = extraNotes.length > 0 ? `<div class="return-print-note">${extraNotes.join(' | ')}</div>` : "";
+      const qtyStr = line.bundleSize > 0 ? `${line.bundles}B ${line.singles}S` : `${line.singles}`;
+
+      return `<tr><td colspan="4" class="item-name">${escapeHtml(line.sku)} ${notesHtml}</td></tr>
+<tr><td class="c">${qtyStr}</td><td class="r">${toMoney(line.billingPrice)}</td><td class="r">${line.itemDiscount > 0 ? toMoney(line.itemDiscount) : "-"}</td><td class="r">${toMoney(line.total)}</td></tr>`;
+    })
     .join("");
   const summaryRowsHtml = summaryRows
     .map((row) => `<div class="summary-row ${row.tone === "deduction" ? "is-deduction" : ""}"><span>${escapeHtml(row.label)}</span><strong>${row.value < 0 ? "- " : ""}LKR ${toMoney(Math.abs(row.value))}</strong></div>`)
     .join("");
   const bundleGuideText = [...new Set(lines.map((line) => String(line.bundleRule || "").trim()).filter(Boolean))].join(" | ");
 
-  const printWindow = window.open("", "_blank", "width=1000,height=1300");
+  const billEmptyOwed = Number(sale?.emptyBottlesOwed || 0);
+  const billEmptyCollected = Number(sale?.emptyBottlesCollected || 0);
+  const billEmptyOutstanding = Math.max(0, billEmptyOwed - billEmptyCollected);
+
+  let customerEmptyOwed = 0;
+  let customerEmptyCollected = 0;
+  if (Array.isArray(allSales) && allSales.length > 0 && pickedCustomer && pickedCustomer !== "Walk-in") {
+    for (const s of allSales) {
+      if (String(s?.customerName || "").trim().toLowerCase() === pickedCustomer.toLowerCase()) {
+        customerEmptyOwed += Number(s.emptyBottlesOwed || 0);
+        customerEmptyCollected += Number(s.emptyBottlesCollected || 0);
+      }
+    }
+  } else {
+    customerEmptyOwed = billEmptyOwed;
+    customerEmptyCollected = billEmptyCollected;
+  }
+  const customerEmptyOutstanding = Math.max(0, customerEmptyOwed - customerEmptyCollected);
+
+  const emptySummaryHtml = `
+<div class="empty-summary"><div class="empty-title">Empty Bottles Summary</div>
+<div class="summary-row"><span>This Bill Pending</span><span>${billEmptyOutstanding}</span></div>
+<div class="summary-row"><span>Customer Outstanding</span><span>${customerEmptyOutstanding}</span></div></div>
+`;
+
+  const printWindow = window.open("", "_blank", "width=380,height=640");
   if (!printWindow) {
     onPopupBlocked();
     return;
   }
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt #${escapeHtml(sale.id)}</title><style>
-@page { size: A4 portrait; margin: 10mm; } body { margin: 0; background: #fff; font-family: "Segoe UI", Arial, sans-serif; color: #111; }
-.sheet { width: 100%; max-width: 190mm; margin: 0 auto; padding: 4mm; } .header { background: linear-gradient(180deg, #dadde2 0%, #d4d8de 100%); border: 1px solid #ced2d8; padding: 12px 14px; display: grid; grid-template-columns: 96px 1fr; gap: 16px; align-items: center; }
-.logo-wrap { display: grid; justify-items: center; align-content: center; gap: 2px; } .logo-wrap img { width: 72px; height: 72px; object-fit: contain; } .logo-wrap span { font-size: 10px; color: #1d3f74; font-weight: 700; letter-spacing: 0.02em; }
-.brand-title { text-align: center; font-weight: 900; font-size: 23px; line-height: 1.02; letter-spacing: 0.28px; text-transform: uppercase; }
-.brand-sub { margin: 8px auto 0; width: fit-content; background: rgba(255,255,255,0.96); border: 1px solid #d9dde4; box-shadow: inset 0 1px 0 rgba(255,255,255,0.75); border-radius: 999px; padding: 6px 18px 7px; font-size: 18px; font-weight: 800; letter-spacing: 0.01em; }
-.meta { margin-top: 12px; border: 1px solid #1f2937; border-radius: 16px; padding: 8px 10px; display: grid; grid-template-columns: 54px 1fr; gap: 12px; align-items: start; }
-  .meta-box { border: 1px solid #1f2937; height: 76px; margin-top: 4px; } .meta-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 0.86fr); gap: 4px 20px; font-size: 16px; line-height: 1.2; align-items: start; }
-  .dots { border-bottom: 1px dotted #222; min-width: 150px; display: inline-block; margin-left: 5px; } .invoice-dots { border-bottom-style: solid; border-bottom-color: #0f4fa8; color: #0f2d56; font-weight: 900; background: linear-gradient(180deg, rgba(220,236,255,0.45) 0%, rgba(220,236,255,0) 100%); padding: 0 4px 1px; border-radius: 6px; } table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 16px; }
-  th, td { border: 1px solid #111; padding: 4px 6px; text-align: left; height: 26px; } th { background: #d9e0ea; font-size: 16px; font-weight: 800; text-transform: uppercase; }
-  th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { text-align: center; }
-  .return-print-note { margin-top: 2px; color: #9f1d1d; font-size: 11px; font-weight: 700; line-height: 1.2; }
-  .qty-breakdown-large { color: #8b1414; font-size: 16px; font-weight: 900; line-height: 1.22; text-align: center; }
-  .totals-grid { margin-top: 16px; display: grid; grid-template-columns: 1fr 1.22fr; gap: 14px; align-items: stretch; }
-  .totals-box, .summary-box { border: 1px solid #cfd6e2; border-radius: 16px; min-height: 104px; padding: 14px 16px; font-size: 16px; }
-  .totals-box { background: linear-gradient(180deg, #fbfdff 0%, #f1f6fc 100%); }
-  .summary-box { background: linear-gradient(180deg, #f8fbff 0%, #e7eef8 100%); border-color: #b9c8db; box-shadow: inset 0 1px 0 rgba(255,255,255,0.65); }
-  .totals-title { font-size: 13px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #39506c; margin-bottom: 10px; }
-  .totals-box .summary-row strong, .summary-box .summary-row strong { font-size: 17px; }
-  .summary-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid rgba(57,80,108,0.12); }
-  .summary-row:last-child { border-bottom: 0; }
-  .summary-row span { color: #334155; font-weight: 700; }
-  .summary-row strong { color: #0f172a; font-weight: 900; }
-  .summary-row.is-deduction strong { color: #a32020; }
-  .summary-total { margin-top: 12px; padding-top: 12px; border-top: 2px solid rgba(15,23,42,0.18); display: flex; justify-content: space-between; align-items: end; gap: 12px; }
-  .summary-total span { font-size: 14px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #28476d; }
-  .summary-total strong { font-size: 28px; color: #0b203a; line-height: 1; }
-  .payment-line { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.72); border: 1px solid rgba(97,122,156,0.2); font-size: 14px; font-weight: 800; color: #23364f; }
-  .payment-line span { display: block; font-size: 11px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #5f738f; margin-bottom: 3px; }
-  .bundle-guide-line { margin-top: 14px; padding: 9px 12px; border: 1px solid rgba(57,80,108,0.18); border-radius: 12px; background: rgba(242,247,253,0.78); font-size: 13px; line-height: 1.45; color: #28476d; }
-  .bundle-guide-line span { font-weight: 900; text-transform: uppercase; letter-spacing: 0.06em; font-size: 11px; color: #48617f; margin-right: 8px; }
-  .notes { margin-top: 16px; font-size: 18px; font-weight: 600; line-height: 1.45; }
-.notes li { margin-bottom: 3px; } .signatures { margin-top: 70px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; text-align: center; font-size: 18px; }
-.sign-line { margin-bottom: 8px; letter-spacing: 2px; } .powered { text-align: center; margin-top: 80px; font-size: 20px; }
-  </style></head><body><div class="sheet">
-<div class="header"><div class="logo-wrap"><img src="/lucky-logo.png" alt="Lucky logo" /></div><div><div class="brand-title">Kanishka Perera<br/>MATALE DISTRIBUTOR</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
-<div class="meta"><div class="meta-box"></div><div class="meta-grid"><div>Name : <span class="dots">${escapeHtml(pickedCustomer)}</span></div><div>Date : <span class="dots">${escapeHtml(dateLabel)}</span></div><div>Address : <span class="dots">${escapeHtml(customer?.address || "-")}</span></div><div>Tel : <span class="dots">${escapeHtml(printedCustomerPhone)}</span></div><div>Rep : <span class="dots">${escapeHtml(sale?.cashier || "-")}</span></div><div>Invoice No : <span class="dots invoice-dots">${escapeHtml(sale?.id || "-")}</span></div><div>Lorry : <span class="dots">${escapeHtml(sale?.lorry || "-")}</span></div><div></div></div></div>
-<table><thead><tr><th>Item Code</th><th>Qty</th><th>Billing Price</th><th>Item Discount</th><th>Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
-${bundleGuideText ? `<div class="bundle-guide-line"><span>Bundle Count</span>${escapeHtml(bundleGuideText)}</div>` : ""}
- <div class="totals-grid"><div class="totals-box"><div class="totals-title">Empty Summary</div><div class="summary-row"><span>Empty Issue</span><strong>-</strong></div><div class="summary-row"><span>Empty Received</span><strong>-</strong></div></div><div class="summary-box"><div class="totals-title">Receipt Summary</div>${summaryRowsHtml}<div class="summary-total"><span>Total Value</span><strong>LKR ${toMoney(printedTotal)}</strong></div><div class="payment-line"><span>Payment</span>${escapeHtml(paymentDisplay.label)}${paymentDisplay.detail ? ` (${escapeHtml(paymentDisplay.detail)})` : ""}</div></div></div>
-<ul class="notes"><li>Return or exchange only with this receipt</li><li>Credit Payment for all goods shall be made No later than 14 days</li></ul>
-<div class="signatures"><div><div class="sign-line">.......................................</div><div>Customer Signature</div><div>Rubber Stamp</div></div><div><div class="sign-line">.......................................</div><div>P.S.R Signature</div></div></div>
-<div class="powered">Powered By J&amp;Co.</div></div></body></html>`;
+@page { size: 80mm auto; margin: 3mm; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-size: 14px; }
+.sheet { width: 100%; }
+.center { text-align: center; }
+.header-block { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.header-text { text-align: left; flex: 1; padding-left: 8px; }
+.logo { max-width: 95px; height: auto; flex-shrink: 0; }
+.brand-title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.15; }
+.brand-sub { font-size: 12.5px; margin-bottom: 8px; font-weight: 600; }
+.meta { margin-top: 10px; font-size: 14px; line-height: 1.5; border-top: 1px dashed #111; border-bottom: 1px dashed #111; padding: 6px 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
+th, td { padding: 4px 2px; text-align: left; }
+th { font-size: 11.5px; text-transform: uppercase; border-bottom: 1px solid #111; }
+.c { text-align: center; } .r { text-align: right; }
+.item-name { font-weight: 700; padding-top: 8px; }
+.return-print-note { font-size: 11.5px; color: #444; font-weight: 600; margin-top: 2px; }
+.empty-summary { border-top: 1px dashed #111; margin-top: 12px; padding-top: 8px; }
+.empty-title { font-size: 12px; text-transform: uppercase; font-weight: 700; margin-bottom: 4px; }
+.totals-grid { border-top: 1px dashed #111; margin-top: 12px; padding-top: 8px; }
+.summary-row { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; font-weight: 500; }
+.summary-row.is-deduction { color: #a32020; }
+.summary-total { display: flex; justify-content: space-between; font-size: 17px; font-weight: 900; border-top: 1px solid #111; padding-top: 6px; margin-top: 6px; }
+.payment-line { font-size: 13px; font-weight: 700; text-align: right; margin-top: 6px; }
+.bundle-guide-line { margin-top: 12px; font-size: 12.5px; text-align: center; border: 1px solid #ccc; padding: 6px; font-weight: 600; }
+.notes { margin-top: 14px; font-size: 13px; text-align: center; line-height: 1.45; font-weight: 600; }
+.sign-box { margin-top: 36px; display: flex; justify-content: space-between; }
+.sign-col { width: 45%; text-align: center; }
+.sign-line { border-bottom: 1px dotted #111; height: 20px; margin-bottom: 4px; }
+.sign-label { font-size: 12px; font-weight: 600; }
+.powered { text-align: center; font-size: 11px; margin-top: 24px; color: #444; }
+</style></head><body><div class="sheet">
+<div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">Kanishka Perera<br/>LUCKY DAIRY DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
+<div class="meta">
+Customer: ${escapeHtml(pickedCustomer)}<br/>
+Date: ${escapeHtml(dateLabel)}<br/>
+Address: ${escapeHtml(customer?.address || "-")}<br/>
+Tel: ${escapeHtml(printedCustomerPhone)}<br/>
+Rep: ${escapeHtml(sale?.cashier || "-")}<br/>
+Invoice No: <strong>${escapeHtml(sale?.id || "-")}</strong><br/>
+Lorry: ${escapeHtml(sale?.lorry || "-")}
+</div>
+<table><thead><tr><th colspan="4">Item Code</th></tr><tr><th class="c">Qty</th><th class="r">Price</th><th class="r">Disc</th><th class="r">Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+${bundleGuideText ? `<div class="bundle-guide-line"><b>Bundle Count:</b> ${escapeHtml(bundleGuideText)}</div>` : ""}
+${emptySummaryHtml}
+<div class="totals-grid">
+${summaryRowsHtml}
+<div class="summary-total"><span>Total Value</span><span>LKR ${toMoney(printedTotal)}</span></div>
+<div class="payment-line">Payment: ${escapeHtml(paymentDisplay.label)}${paymentDisplay.detail ? ` (${escapeHtml(paymentDisplay.detail)})` : ""}</div>
+</div>
+<div class="notes">Return or exchange only with this receipt.<br/>Credit Payment for all goods shall be made No later than 14 days.</div>
+<div class="sign-box"><div class="sign-col"><div class="sign-line"></div><div class="sign-label">Customer Sign</div></div><div class="sign-col"><div class="sign-line"></div><div class="sign-label">P.S.R Sign</div></div></div>
+<div class="powered">Powered By J&amp;Co.</div>
+</div></body></html>`;
 
   printWindow.document.open();
   printWindow.document.write(receiptHtml);
@@ -680,21 +824,21 @@ const openPreOrderReceiptPrint = ({
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Pre-Order #${escapeHtml(sale.id)}</title><style>
 @page { size: 80mm auto; margin: 3mm; }
-body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-size: 12px; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-size: 14px; }
 .sheet { width: 100%; }
 .center { text-align: center; }
-.title { font-weight: 900; font-size: 15px; text-transform: uppercase; }
-.tag { display: inline-block; margin-top: 3px; padding: 2px 8px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
-.meta { margin-top: 8px; font-size: 11.5px; line-height: 1.5; }
-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
-th, td { border-bottom: 1px solid #ccc; padding: 3px 2px; text-align: left; }
-th { font-size: 10px; text-transform: uppercase; }
+.title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.15; }
+.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+.meta { margin-top: 10px; font-size: 14px; line-height: 1.5; border-top: 1px dashed #111; border-bottom: 1px dashed #111; padding: 6px 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
+th, td { border-bottom: 1px solid #ccc; padding: 4px 2px; text-align: left; }
+th { font-size: 11.5px; text-transform: uppercase; }
 .c { text-align: center; } .r { text-align: right; }
-.total-row { margin-top: 8px; display: flex; justify-content: space-between; font-weight: 900; font-size: 14px; border-top: 1px solid #111; padding-top: 6px; }
-.note { margin-top: 10px; font-size: 10.5px; line-height: 1.4; }
-.sign-box { margin-top: 26px; }
+.total-row { margin-top: 12px; display: flex; justify-content: space-between; font-weight: 900; font-size: 17px; border-top: 1px solid #111; padding-top: 6px; }
+.note { margin-top: 14px; font-size: 13px; line-height: 1.45; font-weight: 600; text-align: center; }
+.sign-box { margin-top: 36px; }
 .sign-line { border-bottom: 1px dotted #111; height: 30px; }
-.sign-label { margin-top: 4px; font-size: 10.5px; text-align: center; }
+.sign-label { margin-top: 4px; font-size: 12px; text-align: center; font-weight: 600; }
 </style></head><body><div class="sheet">
 <div class="center"><div class="title">Lucky Distributor</div><div class="tag">Pre-Order</div></div>
 <div class="meta">
@@ -1862,7 +2006,6 @@ const CashierView = ({
                 </span>
                 <span className="menu-toggle-label">{mobileCashierNavOpen ? "Close" : "Menu"}</span>
               </button>
-              <button type="button" className="rep-billing-logout-btn" onClick={onLogout}>Log Out</button>
             </div>
             <div className="rep-wizard-head">
               <div>
@@ -2087,6 +2230,31 @@ const CashierView = ({
                         <div className="mc-review-grid">
                           <article><span>Customer</span><strong>{customerName || "—"}</strong></article>
                           <article><span>Items</span><strong>{cart.length} ({currentCartQty} units)</strong></article>
+                          {(() => {
+                            let currentEmptyOwed = 0;
+                            if (Array.isArray(cart)) {
+                              for (const line of cart) {
+                                const product = (state.products || []).find((p) => p.id === line.productId);
+                                if (!product || product.returnableBottle !== false) {
+                                  currentEmptyOwed += Number(line.quantity || 1);
+                                }
+                              }
+                            }
+                            let customerEmptyOwed = 0;
+                            let customerEmptyCollected = 0;
+                            if (state?.sales && Array.isArray(state.sales) && customerName && customerName !== "Walk-in") {
+                              for (const s of state.sales) {
+                                if (String(s?.customerName || "").trim().toLowerCase() === customerName.trim().toLowerCase()) {
+                                  customerEmptyOwed += Number(s.emptyBottlesOwed || 0);
+                                  customerEmptyCollected += Number(s.emptyBottlesCollected || 0);
+                                }
+                              }
+                            }
+                            const totalEmptiesToCollect = currentEmptyOwed + Math.max(0, customerEmptyOwed - customerEmptyCollected);
+                            return totalEmptiesToCollect > 0 ? (
+                              <article><span>Empties</span><strong>{totalEmptiesToCollect} to collect</strong></article>
+                            ) : null;
+                          })()}
                         </div>
                         {customerName.trim() && selectedCustomerOutstanding > 0 ? (
                           <p className="mc-review-warn">Outstanding: {currency(selectedCustomerOutstanding)}</p>
@@ -3331,13 +3499,31 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [reportDeliveryDateFrom, setReportDeliveryDateFrom] = useState("");
   const [reportDeliveryDateTo, setReportDeliveryDateTo] = useState("");
   const [emptyBottleLogSearch, setEmptyBottleLogSearch] = useState("");
+  const [emptyBottleLogRepFilter, setEmptyBottleLogRepFilter] = useState("");
   const [emptyBottleLogDateFrom, setEmptyBottleLogDateFrom] = useState("");
   const [emptyBottleLogDateTo, setEmptyBottleLogDateTo] = useState("");
   const [activePage, setActivePage] = useState("dashboard");
+  const [accountingSearch, setAccountingSearch] = useState("");
+  const [showAccountingForm, setShowAccountingForm] = useState(false);
+  const [accountingForm, setAccountingForm] = useState({ id: "", type: "expense", category: "", amount: "", description: "", staffId: "", date: "", coaType: "Operating Expenses", coaGroup: "Vehicle Expenses", coaSub: "Lorry Fuel", sourceAccountId: "", destinationAccountId: "" });
+  const [accountingDateFrom, setAccountingDateFrom] = useState("");
+  const [accountingDateTo, setAccountingDateTo] = useState("");
+  const [showPayrollModal, setShowPayrollModal] = useState(false);
+  const [payrollMonth, setPayrollMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [payslipData, setPayslipData] = useState(null);
+  const [showAccountsModal, setShowAccountsModal] = useState(false);
+  const [accountForm, setAccountForm] = useState({ id: "", name: "", type: "bank", initialBalance: "" });
+  const [showSuppliersModal, setShowSuppliersModal] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({ id: "", name: "", company: "", phone: "", address: "" });
+  const [showPurchasesModal, setShowPurchasesModal] = useState(false);
+  const [purchaseForm, setPurchaseForm] = useState({ id: "", supplierId: "", invoiceNo: "", date: "", dueDate: "", totalAmount: "", paidAmount: "", status: "unpaid" });
   const [notice, setNotice] = useState("");
 
   const [customerForm, setCustomerForm] = useState({ id: "", name: "", phone: "", address: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
-  const [staffForm, setStaffForm] = useState({ id: "", authUserId: "", name: "", role: "", phone: "", username: "", password: "", authRole: "cashier" });
+  const [staffForm, setStaffForm] = useState({ id: "", authUserId: "", name: "", role: "", phone: "", monthlySalary: "", username: "", password: "", authRole: "cashier" });
   const [stockMode, setStockMode] = useState("add");
   const [stockForm, setStockForm] = useState({ productId: "", quantity: "", stock: "", sku: "", invoicePrice: "", billingPrice: "", mrp: "" });
   const [stockSearch, setStockSearch] = useState("");
@@ -4020,9 +4206,16 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       }
     }
 
+    let expenses = 0;
+    for (const entry of (state.accounting || [])) {
+      if (dashboardProfitDateFrom && entry.date < dashboardProfitDateFrom) continue;
+      if (dashboardProfitDateTo && entry.date > dashboardProfitDateTo) continue;
+      expenses += Number(entry.amount || 0);
+    }
+
     const revenue = Number((grossRevenue - returnedRevenue - undeliveredRevenue).toFixed(2));
     const cost = Number((initialCost - returnedCost - undeliveredCost).toFixed(2));
-    const profit = Number((revenue - cost).toFixed(2));
+    const profit = Number((revenue - cost - expenses).toFixed(2));
 
     return {
       from: dashboardProfitDateFrom,
@@ -4030,6 +4223,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       filteredSalesCount: scopedSales.length,
       revenue,
       cost,
+      expenses,
       profit,
       margin: revenue > 0 ? Number(((profit / revenue) * 100).toFixed(1)) : 0
     };
@@ -4281,11 +4475,43 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       name: (row) => row.name,
       username: (row) => row.username || "",
       role: (row) => row.authRole || row.role || "",
+      salary: (row) => Number(row.monthlySalary || 0),
       orders: (row) => Number(row.orders || 0),
       revenue: (row) => Number(row.revenue || 0)
     }),
     [staffRows, tableSort]
   );
+  
+  const payrollPreview = useMemo(() => {
+    if (!showPayrollModal) return [];
+    const [year, month] = payrollMonth.split("-");
+    const monthStart = `${year}-${month}-01`;
+    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    const monthEnd = `${year}-${month}-${lastDay}`;
+    
+    return (state.staff || [])
+      .filter(s => Number(s.monthlySalary) > 0)
+      .map(staff => {
+        const staffAdvances = (state.accounting || []).filter(item => 
+          item.staffId === staff.id && 
+          item.type === "advance" &&
+          item.date >= monthStart && item.date <= monthEnd
+        );
+        
+        const totalAdvance = staffAdvances.reduce((acc, item) => acc + Number(item.amount || 0), 0);
+        const netPay = Number(staff.monthlySalary) - totalAdvance;
+        
+        return {
+          staffId: staff.id,
+          name: staff.name,
+          baseSalary: Number(staff.monthlySalary),
+          totalAdvance,
+          netPay,
+          monthStr: `${year}-${month}`
+        };
+      });
+  }, [showPayrollModal, payrollMonth, state.staff, state.accounting]);
+
   const staffPageSummary = useMemo(() => {
     const rows = sortedStaffRows || [];
     const totalStaff = rows.length;
@@ -4770,20 +4996,34 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const emptyBottleLogRows = useMemo(() => {
     return (state.emptyBottleCollections || [])
       .filter((entry) => inDateRange(entry.createdAt, emptyBottleLogDateFrom, emptyBottleLogDateTo))
-      .map((entry) => ({ ...entry, when: new Date(entry.createdAt).toLocaleString() }))
+      .filter((entry) => !emptyBottleLogRepFilter || String(entry.collectedBy || "").trim().toLowerCase() === emptyBottleLogRepFilter.trim().toLowerCase())
+      .map((entry) => {
+        const sale = (state.sales || []).find((s) => String(s.id) === String(entry.saleId));
+        const remaining = sale ? Math.max(0, Number(sale.emptyBottlesOwed || 0) - Number(sale.emptyBottlesCollected || 0)) : 0;
+        return { ...entry, when: new Date(entry.createdAt).toLocaleString(), remaining };
+      })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [state.emptyBottleCollections, emptyBottleLogDateFrom, emptyBottleLogDateTo]);
+  }, [state.emptyBottleCollections, state.sales, emptyBottleLogDateFrom, emptyBottleLogDateTo, emptyBottleLogRepFilter]);
   const emptyBottleLogSummary = useMemo(() => {
     const totalQty = emptyBottleLogRows.reduce((acc, row) => acc + Number(row.quantity || 0), 0);
     const collectors = new Set(emptyBottleLogRows.map((row) => row.collectedBy).filter(Boolean));
     const customers = new Set(emptyBottleLogRows.map((row) => row.customerName).filter(Boolean));
+
+    let totalOutstanding = 0;
+    const salesToCheck = state.sales || [];
+    for (const sale of salesToCheck) {
+      if (emptyBottleLogRepFilter && String(sale.cashier || "").trim().toLowerCase() !== emptyBottleLogRepFilter.trim().toLowerCase()) continue;
+      totalOutstanding += Math.max(0, Number(sale.emptyBottlesOwed || 0) - Number(sale.emptyBottlesCollected || 0));
+    }
+
     return {
       entries: emptyBottleLogRows.length,
       totalQty,
       collectors: collectors.size,
-      customers: customers.size
+      customers: customers.size,
+      totalOutstanding
     };
-  }, [emptyBottleLogRows]);
+  }, [emptyBottleLogRows, state.sales, emptyBottleLogRepFilter]);
 
   const viewedSale = useMemo(
     () => (state.sales || []).find((sale) => String(sale.id) === String(viewSaleId)) || null,
@@ -4973,6 +5213,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       sale: printSale,
       customers: state.customers || [],
       products: state.products || [],
+      allSales: state.sales || [],
       returnByProduct,
       undeliveredByProduct,
       returnedAmountOverride: Number(printSale?.returnedAmount || 0),
@@ -5442,7 +5683,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       setNotice("Manager access cannot create or edit users.");
       return;
     }
-    setStaffForm({ id: "", authUserId: "", name: "", role: "", phone: "", username: "", password: "", authRole: "cashier" });
+    setStaffForm({ id: "", authUserId: "", name: "", role: "", phone: "", monthlySalary: "", username: "", password: "", authRole: "cashier" });
     setShowStaffForm(true);
   };
 
@@ -5473,11 +5714,81 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       name: matchedAuth?.name || matched?.name || row.name || "",
       role: matched?.role || row.role || "",
       phone: matched?.phone || row.phone || "",
+      monthlySalary: matched?.monthlySalary || row.monthlySalary || "",
       username: matchedAuth?.username || row.username || "",
       password: "",
       authRole: matchedAuth?.role || row.authRole || "cashier"
     });
     setShowStaffForm(true);
+  };
+
+  const saveAccount = () => {
+    if (!accountForm.name.trim()) {
+      setNotice("Account name is required.");
+      return;
+    }
+    const payload = {
+      name: accountForm.name.trim(),
+      type: accountForm.type,
+      initialBalance: Number(accountForm.initialBalance || 0)
+    };
+    const action = accountForm.id ? updateAccount(accountForm.id, payload) : createAccount(payload);
+    action.then(() => {
+      setShowAccountsModal(false);
+      setAccountForm({ id: "", name: "", type: "bank", initialBalance: "" });
+      setNotice("Account saved successfully!");
+    }).catch((err) => setNotice(err.message || "Failed to save account"));
+  };
+
+  const deleteAccountHandler = (id) => {
+    if (confirm("Are you sure you want to delete this account?")) {
+      deleteAccount(id).catch((err) => setNotice(err.message || "Failed to delete account"));
+    }
+  };
+
+  const saveSupplier = () => {
+    if (!supplierForm.name.trim()) {
+      setNotice("Supplier name is required.");
+      return;
+    }
+    const payload = { ...supplierForm };
+    const action = supplierForm.id ? updateSupplier(supplierForm.id, payload) : createSupplier(payload);
+    action.then(() => {
+      setSupplierForm({ id: "", name: "", company: "", phone: "", address: "" });
+      setNotice("Supplier saved successfully!");
+      fetchState();
+    }).catch((err) => setNotice(err.message || "Failed to save supplier"));
+  };
+
+  const deleteSupplierHandler = (id) => {
+    if (!window.confirm("Are you sure you want to delete this supplier?")) return;
+    deleteSupplier(id).then(() => {
+      setNotice("Supplier deleted!");
+      fetchState();
+    }).catch((err) => setNotice(err.message || "Failed to delete supplier"));
+  };
+
+  const savePurchase = () => {
+    if (!purchaseForm.supplierId || Number(purchaseForm.totalAmount) <= 0) {
+      setNotice("Supplier and positive Total Amount are required.");
+      return;
+    }
+    const payload = { ...purchaseForm };
+    const action = purchaseForm.id ? updatePurchase(purchaseForm.id, payload) : createPurchase(payload);
+    action.then(() => {
+      setPurchaseForm({ id: "", supplierId: "", invoiceNo: "", date: new Date().toISOString().split("T")[0], dueDate: "", totalAmount: "", paidAmount: "", status: "unpaid" });
+      setShowPurchasesModal(false);
+      setNotice("Purchase invoice saved successfully!");
+      fetchState();
+    }).catch((err) => setNotice(err.message || "Failed to save purchase invoice"));
+  };
+
+  const deletePurchaseHandler = (id) => {
+    if (!window.confirm("Are you sure you want to delete this purchase invoice?")) return;
+    deletePurchase(id).then(() => {
+      setNotice("Purchase invoice deleted!");
+      fetchState();
+    }).catch((err) => setNotice(err.message || "Failed to delete purchase invoice"));
   };
 
   const saveStaff = () => {
@@ -5499,7 +5810,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
         return;
       }
     }
-    const payload = { name: staffForm.name.trim(), role: staffForm.role, phone: staffForm.phone };
+    const payload = { name: staffForm.name.trim(), role: staffForm.role, phone: staffForm.phone, monthlySalary: Number(staffForm.monthlySalary || 0) };
     const isEdit = Boolean(staffForm.id || staffForm.authUserId);
     const actions = [];
     if (isEdit) {
@@ -5575,6 +5886,85 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       setNotice("User deleted.");
     } catch (error) {
       setNotice(error.message || "Unable to delete user.");
+    }
+  };
+
+  const confirmPayroll = async () => {
+    try {
+      const entries = payrollPreview.map(p => ({
+        type: "salary",
+        category: "Payroll & Staff > Salaries > Staff Salary",
+        description: `Salary - ${p.monthStr}`,
+        amount: Number(p.netPay),
+        staffId: p.staffId,
+        date: new Date().toISOString().split("T")[0]
+      }));
+
+      for (const payload of entries) {
+        if (payload.amount > 0) {
+          await createAccounting(payload);
+        }
+      }
+      setShowPayrollModal(false);
+      setNotice("Payroll generated successfully.");
+      fetchState();
+    } catch (error) {
+      console.error(error);
+      setNotice("Failed to generate payroll.");
+    }
+  };
+
+  const saveAccountingEntry = async () => {
+    try {
+      if (Number(accountingForm.amount) <= 0) {
+        setNotice("A positive amount is required.");
+        return;
+      }
+      const payload = {
+        type: accountingForm.type,
+        category: accountingForm.type === "expense" 
+          ? `${accountingForm.coaType} > ${accountingForm.coaGroup} > ${accountingForm.coaSub}`
+          : accountingForm.type === "salary" ? "Payroll & Staff > Salaries > Staff Salary" 
+          : accountingForm.type === "advance" ? "Payroll & Staff > Advances > Staff Advance"
+          : accountingForm.type === "income" ? "Income"
+          : accountingForm.type === "supplier_payment" ? accountingForm.category
+          : "Transfer",
+        amount: Number(accountingForm.amount),
+        description: accountingForm.description.trim(),
+        date: accountingForm.date,
+        staffId: ["salary", "advance"].includes(accountingForm.type) ? accountingForm.staffId : null,
+        sourceAccountId: ["expense", "transfer", "supplier_payment"].includes(accountingForm.type) ? accountingForm.sourceAccountId : null,
+        destinationAccountId: ["income", "transfer"].includes(accountingForm.type) ? accountingForm.destinationAccountId : null,
+        supplierInvoiceId: accountingForm.type === "supplier_payment" ? accountingForm.supplierInvoiceId : null
+      };
+
+      if (accountingForm.id) {
+        await updateAccounting(accountingForm.id, payload);
+        setNotice("Accounting entry updated.");
+      } else {
+        await createAccounting(payload);
+        setNotice("Accounting entry created.");
+      }
+      setShowAccountingForm(false);
+    } catch (error) {
+      setNotice(error.message || "Failed to save accounting entry");
+    }
+  };
+
+  const deleteAccountingEntry = async (id) => {
+    const accepted = await requestConfirm({
+      title: "Delete Entry",
+      message: "Are you sure you want to delete this accounting entry?",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      tone: "danger"
+    });
+    if (!accepted) return;
+    try {
+      await deleteAccounting(id);
+      setNotice("Entry deleted.");
+    } catch (error) {
+      setNotice(error.message || "Failed to delete entry");
     }
   };
 
@@ -6101,6 +6491,13 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       )
     },
     {
+      id: "purchases", label: "Purchases", iconClass: "purchases", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-2 0H3V6h14v8zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+        </svg>
+      )
+    },
+    {
       id: "stock", label: "Stock", iconClass: "stock", icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4.5 7.5 12 4l7.5 3.5L12 11z" />
@@ -6109,6 +6506,13 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
         </svg>
       )
     },
+    ...(isAdmin ? [{
+      id: "accounting", label: "Accounting", iconClass: "accounting", icon: (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      )
+    }] : []),
     {
       id: "staff", label: "Staff", iconClass: "staff", icon: (
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -6713,6 +7117,344 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
             </section>
           ) : null}
 
+          {activePage === "accounting" && isAdmin ? (
+            <section className="admin-mobile-section admin-accounting-panel">
+              <div className="accounting-head">
+                <h2>Accounting</h2>
+                <div className="accounting-actions">
+                  <button type="button" className="ghost" onClick={() => setShowAccountsModal(true)}>Manage Accounts</button>
+                  <button type="button" className="ghost" onClick={() => setShowPayrollModal(true)}>Run Payroll</button>
+                  <button type="button" onClick={() => {
+                    setAccountingForm({ id: "", type: "expense", category: "", amount: "", description: "", staffId: "", date: new Date().toISOString().split("T")[0], coaType: "Operating Expenses", coaGroup: "Vehicle Expenses", coaSub: "Lorry Fuel", sourceAccountId: "", destinationAccountId: "" });
+                    setShowAccountingForm(true);
+                  }}>Add Record</button>
+                </div>
+              </div>
+
+              {(() => {
+                const balances = {};
+                let firstCashAccountId = null;
+                (state.accounts || []).forEach(acc => {
+                  balances[acc.id] = Number(acc.initialBalance || 0);
+                  if (acc.type === "cash" && !firstCashAccountId) {
+                    firstCashAccountId = acc.id;
+                  }
+                });
+                if (firstCashAccountId) {
+                  let totalCashSales = 0;
+                  (state.sales || []).forEach(sale => {
+                    (sale.payments || []).forEach(payment => {
+                      if (payment.method === "cash") {
+                        totalCashSales += Number(payment.amount || 0);
+                      }
+                    });
+                  });
+                  balances[firstCashAccountId] += totalCashSales;
+                }
+                (state.accounting || []).forEach(entry => {
+                  const amt = Number(entry.amount || 0);
+                  const srcId = entry.sourceAccountId || firstCashAccountId;
+                  const destId = entry.destinationAccountId || firstCashAccountId;
+                  if (["expense", "salary", "advance"].includes(entry.type) && srcId) {
+                    balances[srcId] = (balances[srcId] || 0) - amt;
+                  } else if (entry.type === "income" && destId) {
+                    balances[destId] = (balances[destId] || 0) + amt;
+                  } else if (entry.type === "transfer") {
+                    if (entry.sourceAccountId) balances[entry.sourceAccountId] = (balances[entry.sourceAccountId] || 0) - amt;
+                    if (entry.destinationAccountId) balances[entry.destinationAccountId] = (balances[entry.destinationAccountId] || 0) + amt;
+                  }
+                });
+                return (state.accounts || []).length > 0 ? (
+                  <div className="account-balances-widget" style={{ display: "flex", gap: "12px", padding: "12px 0", overflowX: "auto", marginBottom: "16px" }}>
+                    {(state.accounts || []).map(acc => (
+                      <div key={acc.id} className="stat-card" style={{ minWidth: "160px", padding: "12px", border: "1px solid #ddd", borderRadius: "8px", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+                        <p style={{ margin: "0 0 4px 0", fontSize: "0.85rem", color: "#666" }}>{acc.name}</p>
+                        <h4 style={{ margin: 0, color: balances[acc.id] >= 0 ? "#1e88e5" : "#e53935", fontSize: "1.2rem" }}>{formatLkrValue(balances[acc.id])}</h4>
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+              
+              <div className="accounting-filters">
+                <input
+                  type="search"
+                  className="admin-search-input search-icon-input"
+                  placeholder="Search description or category"
+                  value={accountingSearch}
+                  onChange={(e) => setAccountingSearch(e.target.value)}
+                />
+                <div className="accounting-date-filters">
+                  <input type="date" value={accountingDateFrom} onChange={(e) => setAccountingDateFrom(e.target.value)} />
+                  <span>to</span>
+                  <input type="date" value={accountingDateTo} onChange={(e) => setAccountingDateTo(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="admin-table accounting-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Type</th>
+                      <th>Category</th>
+                      <th>Description</th>
+                      <th>Staff</th>
+                      <th className="number-cell">Amount</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(state.accounting || [])
+                      .filter((item) => {
+                        if (accountingSearch && !item.category?.toLowerCase().includes(accountingSearch.toLowerCase()) && !item.description?.toLowerCase().includes(accountingSearch.toLowerCase())) return false;
+                        if (accountingDateFrom && item.date < accountingDateFrom) return false;
+                        if (accountingDateTo && item.date > accountingDateTo) return false;
+                        return true;
+                      })
+                      .sort((a, b) => new Date(b.date) - new Date(a.date))
+                      .map((item) => {
+                        const staffMember = (state.staff || []).find((s) => s.id === item.staffId);
+                        return (
+                          <tr key={item.id}>
+                            <td>{item.date}</td>
+                            <td><span className={`accounting-badge ${item.type}`}>{item.type}</span></td>
+                            <td>{item.category}</td>
+                            <td>{item.description}</td>
+                            <td>{staffMember ? staffMember.name : "-"}</td>
+                            <td className="number-cell amount-cell">LKR {formatLkrValue(item.amount)}</td>
+                            <td>
+                              <div className="table-actions">
+                                {item.type === "salary" && staffMember && (
+                                  <button type="button" className="ghost primary-text" onClick={() => openPayslipPrint({ entry: item, staff: staffMember })}>Print</button>
+                                )}
+                                <button type="button" className="ghost" onClick={() => {
+                                  let coaType = "Operating Expenses";
+                                  let coaGroup = "Vehicle Expenses";
+                                  let coaSub = "Lorry Fuel";
+                                  if (item.category && item.category.includes(" > ")) {
+                                    const parts = item.category.split(" > ");
+                                    if (parts.length === 3) {
+                                      coaType = parts[0].trim();
+                                      coaGroup = parts[1].trim();
+                                      coaSub = parts[2].trim();
+                                    }
+                                  } else if (item.category) {
+                                    // Fallback for old single-string categories
+                                    coaType = "Miscellaneous";
+                                    coaGroup = "Other";
+                                    coaSub = item.category;
+                                  }
+                                  setAccountingForm({ ...item, amount: item.amount.toString(), coaType, coaGroup, coaSub, sourceAccountId: item.sourceAccountId || "", destinationAccountId: item.destinationAccountId || "" });
+                                  setShowAccountingForm(true);
+                                }}>Edit</button>
+                                <button type="button" className="ghost danger-text" onClick={() => deleteAccountingEntry(item.id)}>Delete</button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+              
+              {showAccountingForm ? (
+                <div className="low-stock-modal" onClick={() => setShowAccountingForm(false)}>
+                  <div className="low-stock-modal-card accounting-form-modal" onClick={(e) => e.stopPropagation()}>
+                    <h3>{accountingForm.id ? "Edit Record" : "Add Record"}</h3>
+                    <div className="form-group">
+                      <label>Type</label>
+                      <select value={accountingForm.type} onChange={(e) => setAccountingForm({ ...accountingForm, type: e.target.value, staffId: ["expense", "income", "transfer"].includes(e.target.value) ? "" : accountingForm.staffId })}>
+                        <option value="expense">General Expense</option>
+                        <option value="salary">Staff Salary</option>
+                        <option value="advance">Staff Advance</option>
+                        <option value="income">Income</option>
+                        <option value="transfer">Account Transfer</option>
+                      </select>
+                    </div>
+                    {["expense", "transfer", "supplier_payment"].includes(accountingForm.type) && (
+                      <div className="form-group">
+                        <label>{accountingForm.type === "transfer" ? "Transfer From" : "Paid From (Account)"}</label>
+                        <select value={accountingForm.sourceAccountId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, sourceAccountId: e.target.value })}>
+                          <option value="">-- Select Account --</option>
+                          {(state.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {["income", "transfer"].includes(accountingForm.type) && (
+                      <div className="form-group">
+                        <label>{accountingForm.type === "transfer" ? "Transfer To" : "Deposit To (Account)"}</label>
+                        <select value={accountingForm.destinationAccountId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, destinationAccountId: e.target.value })}>
+                          <option value="">-- Select Account --</option>
+                          {(state.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {accountingForm.type === "expense" && (
+                      <>
+                        <div className="form-group">
+                          <label>Account Type</label>
+                          <select value={accountingForm.coaType} onChange={(e) => {
+                            const newType = e.target.value;
+                            const newGroup = Object.keys(CHART_OF_ACCOUNTS[newType] || {})[0] || "";
+                            const newSub = (CHART_OF_ACCOUNTS[newType]?.[newGroup] || [])[0] || "";
+                            setAccountingForm({ ...accountingForm, coaType: newType, coaGroup: newGroup, coaSub: newSub });
+                          }}>
+                            {Object.keys(CHART_OF_ACCOUNTS).filter(k => k !== "Payroll & Staff").map(type => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {accountingForm.coaType && CHART_OF_ACCOUNTS[accountingForm.coaType] && (
+                          <div className="form-group">
+                            <label>Account Group</label>
+                            <select value={accountingForm.coaGroup} onChange={(e) => {
+                              const newGroup = e.target.value;
+                              const newSub = (CHART_OF_ACCOUNTS[accountingForm.coaType]?.[newGroup] || [])[0] || "";
+                              setAccountingForm({ ...accountingForm, coaGroup: newGroup, coaSub: newSub });
+                            }}>
+                              {Object.keys(CHART_OF_ACCOUNTS[accountingForm.coaType]).map(group => (
+                                <option key={group} value={group}>{group}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                        {accountingForm.coaType && accountingForm.coaGroup && CHART_OF_ACCOUNTS[accountingForm.coaType]?.[accountingForm.coaGroup] && (
+                          <div className="form-group">
+                            <label>Sub-Account</label>
+                            <select value={accountingForm.coaSub} onChange={(e) => setAccountingForm({ ...accountingForm, coaSub: e.target.value })}>
+                              {CHART_OF_ACCOUNTS[accountingForm.coaType][accountingForm.coaGroup].map(sub => (
+                                <option key={sub} value={sub}>{sub}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="form-group">
+                      <label>Amount (LKR)</label>
+                      <input type="number" min="0" step="0.01" value={accountingForm.amount} onChange={(e) => setAccountingForm({ ...accountingForm, amount: e.target.value })} />
+                    </div>
+                    {["salary", "advance"].includes(accountingForm.type) ? (
+                      <div className="form-group">
+                        <label>Staff Member</label>
+                        <select value={accountingForm.staffId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, staffId: e.target.value })}>
+                          <option value="">-- Select Staff --</option>
+                          {(state.staff || []).map((s) => (
+                            <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    <div className="form-group">
+                      <label>Date</label>
+                      <input type="date" value={accountingForm.date} onChange={(e) => setAccountingForm({ ...accountingForm, date: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label>Description (Optional)</label>
+                      <textarea value={accountingForm.description} onChange={(e) => setAccountingForm({ ...accountingForm, description: e.target.value })} />
+                    </div>
+                    <div className="form-actions">
+                      <button type="button" className="ghost" onClick={() => setShowAccountingForm(false)}>Cancel</button>
+                      <button type="button" className="primary" onClick={saveAccountingEntry}>Save Record</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {showPayrollModal ? (
+                <div className="low-stock-modal" onClick={() => setShowPayrollModal(false)}>
+                  <div className="low-stock-modal-card payroll-modal" onClick={(e) => e.stopPropagation()}>
+                    <h3>Run Payroll</h3>
+                    <div className="form-group">
+                      <label>Payroll Month</label>
+                      <input type="month" value={payrollMonth} onChange={(e) => setPayrollMonth(e.target.value)} />
+                    </div>
+                    
+                    <div className="admin-table payroll-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Staff Name</th>
+                            <th className="number-cell">Base Salary</th>
+                            <th className="number-cell">Advances</th>
+                            <th className="number-cell">Net Pay</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {payrollPreview.length > 0 ? payrollPreview.map(p => (
+                            <tr key={p.staffId}>
+                              <td>{p.name}</td>
+                              <td className="number-cell">{formatLkrValue(p.baseSalary)}</td>
+                              <td className="number-cell danger-text">-{formatLkrValue(p.totalAdvance)}</td>
+                              <td className="number-cell"><b>{formatLkrValue(p.netPay)}</b></td>
+                            </tr>
+                          )) : (
+                            <tr><td colSpan="4" style={{ textAlign: "center", padding: "20px" }}>No staff configured with a monthly salary.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    <div className="form-actions">
+                      <button type="button" className="ghost" onClick={() => setShowPayrollModal(false)}>Cancel</button>
+                      <button type="button" className="primary" onClick={confirmPayroll} disabled={!payrollPreview.length}>Confirm & Log Payroll</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {showAccountsModal ? (
+                <div className="modal-overlay">
+                  <div className="modal-content admin-modal">
+                    <h3>Manage Accounts</h3>
+                    <div className="admin-inline-form" style={{ marginBottom: "16px" }}>
+                      <input value={accountForm.name} onChange={e => setAccountForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Account Name (e.g. Petty Cash)" />
+                      <select value={accountForm.type} onChange={e => setAccountForm(prev => ({ ...prev, type: e.target.value }))}>
+                        <option value="cash">Cash / Till</option>
+                        <option value="bank">Bank Account</option>
+                      </select>
+                      <input type="number" step="0.01" value={accountForm.initialBalance} onChange={e => setAccountForm(prev => ({ ...prev, initialBalance: e.target.value }))} placeholder="Initial Balance" />
+                      <button type="button" onClick={saveAccount}>{accountForm.id ? "Update Account" : "Add Account"}</button>
+                      {accountForm.id && <button type="button" className="ghost" onClick={() => setAccountForm({ id: "", name: "", type: "bank", initialBalance: "" })}>Cancel Edit</button>}
+                    </div>
+                    <div className="admin-table">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Account Name</th>
+                            <th>Type</th>
+                            <th className="number-cell">Initial Balance</th>
+                            <th className="number-cell">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(state.accounts || []).map(acc => (
+                            <tr key={acc.id}>
+                              <td>{acc.name}</td>
+                              <td style={{textTransform:"capitalize"}}>{acc.type}</td>
+                              <td className="number-cell">{formatLkrValue(acc.initialBalance)}</td>
+                              <td className="number-cell">
+                                <button type="button" className="ghost" style={{padding:"2px 8px", marginRight:"4px"}} onClick={() => setAccountForm({ id: acc.id, name: acc.name, type: acc.type, initialBalance: acc.initialBalance })}>Edit</button>
+                                <button type="button" className="danger-btn" style={{padding:"2px 8px"}} onClick={() => deleteAccountHandler(acc.id)}>Delete</button>
+                              </td>
+                            </tr>
+                          ))}
+                          {(!state.accounts || state.accounts.length === 0) && (
+                            <tr><td colSpan="4" style={{textAlign:"center", color:"#888"}}>No accounts created yet.</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="form-actions" style={{ marginTop: "16px" }}>
+                      <button type="button" className="ghost" onClick={() => setShowAccountsModal(false)}>Close</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           {activePage === "staff" ? (
             <section className="admin-mobile-section">
               <div className="staff-head">
@@ -6726,6 +7468,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <input value={staffForm.name} onChange={(e) => setStaffForm((c) => ({ ...c, name: e.target.value }))} placeholder="Staff name" />
                   <input value={staffForm.role} onChange={(e) => setStaffForm((c) => ({ ...c, role: e.target.value }))} placeholder="Role" />
                   <input value={staffForm.phone} onChange={(e) => setStaffForm((c) => ({ ...c, phone: e.target.value }))} placeholder="Phone" />
+                  <input type="number" min="0" step="0.01" value={staffForm.monthlySalary} onChange={(e) => setStaffForm((c) => ({ ...c, monthlySalary: e.target.value }))} placeholder="Monthly Salary (LKR)" />
                   {!staffForm.authUserId ? (
                     <>
                       <input value={staffForm.username} onChange={(e) => setStaffForm((c) => ({ ...c, username: e.target.value }))} placeholder="Username" />
@@ -6769,6 +7512,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <button type="button" className="th-sort" onClick={() => toggleSort("staff", "name")}>Staff{sortMark("staff", "name")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("staff", "username")}>Username{sortMark("staff", "username")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("staff", "role")}>Access{sortMark("staff", "role")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("staff", "salary")}>Salary{sortMark("staff", "salary")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("staff", "orders")}>Orders{sortMark("staff", "orders")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("staff", "revenue")}>Revenue{sortMark("staff", "revenue")}</button>
                   <span>Action</span>
@@ -6792,6 +7536,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                     <span>{row.name}</span>
                     <span>{row.username || "-"}</span>
                     <span>{row.authRole || row.role || "-"}</span>
+                    <span>{row.monthlySalary ? currency(row.monthlySalary) : "-"}</span>
                     <span>{row.orders}</span>
                     <span>{currency(row.revenue)}</span>
                     <span className="staff-row-action">
@@ -7110,6 +7855,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                       <div className="dashboard-profit-meta">
                         <span>Revenue <b>LKR {formatLkrValue(dashboardProfitSummary.revenue)}</b></span>
                         <span>Invoice Cost <b>LKR {formatLkrValue(dashboardProfitSummary.cost)}</b></span>
+                        <span>Total Expenses <b>LKR {formatLkrValue(dashboardProfitSummary.expenses)}</b></span>
                       </div>
                       <div className="dashboard-profit-foot">
                         <span>{dashboardProfitSummary.filteredSalesCount} bill{dashboardProfitSummary.filteredSalesCount === 1 ? "" : "s"} in range</span>
@@ -7725,33 +8471,47 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                       <input type="date" value={emptyBottleLogDateTo} onChange={(e) => setEmptyBottleLogDateTo(e.target.value)} />
                     </label>
                   </div>
+                  <select
+                    className="search-icon-input imperfect-search-input"
+                    value={emptyBottleLogRepFilter}
+                    onChange={(e) => setEmptyBottleLogRepFilter(e.target.value)}
+                    style={{ marginBottom: "8px" }}
+                  >
+                    <option value="">All Reps (Filter by Rep)</option>
+                    {[...new Set((state.emptyBottleCollections || []).map(e => String(e.collectedBy || "").trim()).filter(Boolean))].sort().map(rep => (
+                      <option key={rep} value={rep}>{rep}</option>
+                    ))}
+                  </select>
                   <input
                     className="search-icon-input imperfect-search-input"
                     value={emptyBottleLogSearch}
                     onChange={(e) => setEmptyBottleLogSearch(e.target.value)}
-                    placeholder="Search by rep or customer"
+                    placeholder="Search by customer or bill"
                   />
                   <div className="delivery-report-kpi-grid">
                     <article><span>Entries</span><strong>{emptyBottleLogSummary.entries}</strong></article>
                     <article><span>Total Bottles Collected</span><strong>{emptyBottleLogSummary.totalQty}</strong></article>
+                    <article><span>Available To Collect</span><strong>{emptyBottleLogSummary.totalOutstanding}</strong></article>
                     <article><span>Reps</span><strong>{emptyBottleLogSummary.collectors}</strong></article>
                     <article><span>Customers</span><strong>{emptyBottleLogSummary.customers}</strong></article>
                   </div>
                   <div className="admin-table empty-bottle-log-table">
-                    <header>
+                    <header style={{ gridTemplateColumns: "1.2fr 1fr 1fr 0.8fr 0.6fr 0.8fr" }}>
                       <span>Date/Time</span>
                       <span>Rep</span>
                       <span>Customer</span>
                       <span>Bill</span>
-                      <span>Qty</span>
+                      <span>Collected</span>
+                      <span>Remaining</span>
                     </header>
                     {emptyBottleLogRows.filter((row) => matchesSearch(emptyBottleLogSearch, row.collectedBy, row.customerName, row.saleId)).length ? emptyBottleLogRows.filter((row) => matchesSearch(emptyBottleLogSearch, row.collectedBy, row.customerName, row.saleId)).map((row) => (
-                      <article key={row.id}>
+                      <article key={row.id} style={{ gridTemplateColumns: "1.2fr 1fr 1fr 0.8fr 0.6fr 0.8fr" }}>
                         <span>{row.when}</span>
                         <span>{row.collectedBy || "-"}</span>
                         <span>{row.customerName || "-"}</span>
                         <span>#{row.saleId}</span>
                         <span>{row.quantity}</span>
+                        <span style={{ color: row.remaining > 0 ? "#ef4444" : "#10b981", fontWeight: "bold" }}>{row.remaining}</span>
                       </article>
                     )) : <p>No empty bottle collections in selected range.</p>}
                   </div>
@@ -7886,6 +8646,146 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               })}
             </div>
           ) : null}
+
+          {activePage === "purchases" ? (
+          <section className="admin-mobile-section admin-purchases-panel">
+            <div className="accounting-head">
+              <h2>Purchases & Suppliers</h2>
+              <div className="accounting-actions">
+                <button type="button" className="ghost" onClick={() => setShowSuppliersModal(true)}>Manage Suppliers</button>
+                <button type="button" onClick={() => {
+                  setPurchaseForm({ id: "", supplierId: "", invoiceNo: "", date: new Date().toISOString().split("T")[0], dueDate: "", totalAmount: "", paidAmount: "", status: "unpaid" });
+                  setShowPurchasesModal(true);
+                }}>Add Purchase Invoice</button>
+              </div>
+            </div>
+
+            <div className="admin-table purchases-table mt-4">
+              <header>
+                <span>Date</span>
+                <span>Invoice No</span>
+                <span>Supplier</span>
+                <span>Due Date</span>
+                <span className="number-cell">Total Amount</span>
+                <span className="number-cell">Paid</span>
+                <span className="number-cell">Balance</span>
+                <span>Status</span>
+                <span>Actions</span>
+              </header>
+              {(state.purchases || []).map(p => {
+                const sup = (state.suppliers || []).find(s => s.id === p.supplierId);
+                const bal = Number(p.totalAmount || 0) - Number(p.paidAmount || 0);
+                return (
+                  <article key={p.id}>
+                    <span>{p.date}</span>
+                    <span>{p.invoiceNo || "-"}</span>
+                    <span>{sup ? sup.name : "Unknown"}</span>
+                    <span style={{ color: new Date(p.dueDate) < new Date() && bal > 0 ? "red" : "inherit" }}>{p.dueDate || "-"}</span>
+                    <span className="number-cell">{formatLkrValue(p.totalAmount)}</span>
+                    <span className="number-cell" style={{ color: "#4caf50" }}>{formatLkrValue(p.paidAmount)}</span>
+                    <span className="number-cell" style={{ color: bal > 0 ? "#e53935" : "inherit" }}>{formatLkrValue(bal)}</span>
+                    <span style={{ textTransform: "capitalize" }}>{p.status}</span>
+                    <span>
+                      <div style={{ display: "flex", gap: "4px" }}>
+                        {bal > 0 && (
+                          <button type="button" className="ghost" style={{ padding: "2px 8px" }} onClick={() => {
+                            setAccountingForm({ id: "", type: "supplier_payment", category: `Supplier Payment - ${sup?.name}`, amount: bal.toString(), description: `Payment for Invoice ${p.invoiceNo}`, staffId: "", date: new Date().toISOString().split("T")[0], coaType: "Operating Expenses", coaGroup: "Other", coaSub: "Supplier Payment", sourceAccountId: "", destinationAccountId: "", supplierInvoiceId: p.id });
+                            setShowAccountingForm(true);
+                            setActivePage("accounting");
+                          }}>Pay</button>
+                        )}
+                        <button type="button" className="ghost" style={{ padding: "2px 8px" }} onClick={() => {
+                          setPurchaseForm(p);
+                          setShowPurchasesModal(true);
+                        }}>Edit</button>
+                        <button type="button" className="danger-btn" style={{ padding: "2px 8px" }} onClick={() => deletePurchaseHandler(p.id)}>Delete</button>
+                      </div>
+                    </span>
+                  </article>
+                );
+              })}
+              {(!state.purchases || state.purchases.length === 0) && (
+                <p style={{ textAlign: "center", color: "#888", padding: "1rem" }}>No purchases found.</p>
+              )}
+            </div>
+
+            {showSuppliersModal && (
+              <div className="modal-overlay">
+                <div className="modal-content admin-modal">
+                  <h3>Manage Suppliers</h3>
+                  <div className="admin-inline-form" style={{ marginBottom: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                    <input value={supplierForm.name} onChange={e => setSupplierForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Supplier Name *" />
+                    <input value={supplierForm.company} onChange={e => setSupplierForm(prev => ({ ...prev, company: e.target.value }))} placeholder="Company Name" />
+                    <input value={supplierForm.phone} onChange={e => setSupplierForm(prev => ({ ...prev, phone: e.target.value }))} placeholder="Phone Number" />
+                    <input value={supplierForm.address} onChange={e => setSupplierForm(prev => ({ ...prev, address: e.target.value }))} placeholder="Address" />
+                    <button type="button" onClick={saveSupplier} style={{ gridColumn: "1 / -1" }}>{supplierForm.id ? "Update Supplier" : "Add Supplier"}</button>
+                    {supplierForm.id && <button type="button" className="ghost" style={{ gridColumn: "1 / -1" }} onClick={() => setSupplierForm({ id: "", name: "", company: "", phone: "", address: "" })}>Cancel Edit</button>}
+                  </div>
+                  <div className="admin-table suppliers-table mt-4">
+                    <header>
+                      <span>Name</span>
+                      <span>Company</span>
+                      <span>Phone</span>
+                      <span>Actions</span>
+                    </header>
+                    {(state.suppliers || []).map(s => (
+                      <article key={s.id}>
+                        <span>{s.name}</span>
+                        <span>{s.company || "-"}</span>
+                        <span>{s.phone || "-"}</span>
+                        <span>
+                          <button type="button" className="ghost" style={{ padding: "2px 8px", marginRight: "4px" }} onClick={() => setSupplierForm(s)}>Edit</button>
+                          <button type="button" className="danger-btn" style={{ padding: "2px 8px" }} onClick={() => deleteSupplierHandler(s.id)}>Delete</button>
+                        </span>
+                      </article>
+                    ))}
+                    {(!state.suppliers || state.suppliers.length === 0) && (
+                      <p style={{ textAlign: "center", color: "#888", padding: "1rem" }}>No suppliers added.</p>
+                    )}
+                  </div>
+                  <div className="form-actions" style={{ marginTop: "16px" }}>
+                    <button type="button" className="ghost" onClick={() => setShowSuppliersModal(false)}>Close</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {showPurchasesModal && (
+              <div className="modal-overlay">
+                <div className="modal-content admin-modal">
+                  <h3>{purchaseForm.id ? "Edit Purchase Invoice" : "Add Purchase Invoice"}</h3>
+                  <div className="form-group">
+                    <label>Supplier *</label>
+                    <select value={purchaseForm.supplierId} onChange={e => setPurchaseForm(prev => ({ ...prev, supplierId: e.target.value }))}>
+                      <option value="">-- Select Supplier --</option>
+                      {(state.suppliers || []).map(s => <option key={s.id} value={s.id}>{s.name} {s.company ? `(${s.company})` : ""}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Invoice Number</label>
+                    <input value={purchaseForm.invoiceNo} onChange={e => setPurchaseForm(prev => ({ ...prev, invoiceNo: e.target.value }))} placeholder="e.g. INV-2023-001" />
+                  </div>
+                  <div className="form-group">
+                    <label>Date</label>
+                    <input type="date" value={purchaseForm.date} onChange={e => setPurchaseForm(prev => ({ ...prev, date: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label>Due Date</label>
+                    <input type="date" value={purchaseForm.dueDate} onChange={e => setPurchaseForm(prev => ({ ...prev, dueDate: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
+                    <label>Total Amount *</label>
+                    <input type="number" step="0.01" value={purchaseForm.totalAmount} onChange={e => setPurchaseForm(prev => ({ ...prev, totalAmount: e.target.value }))} />
+                  </div>
+                  <div className="form-actions" style={{ marginTop: "16px" }}>
+                    <button type="button" className="ghost" onClick={() => setShowPurchasesModal(false)}>Cancel</button>
+                    <button type="button" onClick={savePurchase}>Save</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : null}
         </section>
       </main>
 
@@ -8217,7 +9117,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               </div>
             </div>
             <div className="receipt-preview">
-              <h4>Kanishka Perera - MATALE DISTRIBUTOR</h4>
+              <h4>Kanishka Perera - LUCKY DAIRY DISTRIBUTOR - POLONNARUWA</h4>
               <p>{new Date(viewedSale.createdAt).toLocaleString()} • {viewedSale.customerName} • {viewedSale.lorry || "-"} • {viewedSale.cashier || "-"} • {viewedSalePaymentDisplay.label}{viewedSalePaymentDisplay.detail ? ` (${viewedSalePaymentDisplay.detail})` : ""}</p>
               <div className="admin-table receipt-table">
                 <header>
@@ -8617,7 +9517,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 };
 
 export const App = () => {
-  const [state, setState] = useState({ settings: {}, products: [], sales: [], returns: [] });
+  const [state, setState] = useState({ settings: {}, products: [], sales: [], returns: [], customers: [], staff: [], accounting: [], accounts: [] });
   const [dashboard, setDashboard] = useState({ salesCount: 0, todaySalesCount: 0, todayRevenue: 0, todayOutstanding: 0, lowStockItems: [] });
   const [appConfig, setAppConfig] = useState({ appMode: "live", demo: { enabled: false, readOnly: false, hasSnapshot: false } });
   const [search, setSearch] = useState("");
@@ -9046,6 +9946,7 @@ export const App = () => {
           sale: saleWithPhone,
           customers: state.customers || [],
           products: state.products || [],
+          allSales: state.sales || [],
           fallbackCustomerName: customerName,
           onPopupBlocked: () => showErrorModal(`Sale ${sale.id} completed, but popup is blocked. Allow popups to print receipt.`)
         });

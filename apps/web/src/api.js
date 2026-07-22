@@ -214,8 +214,77 @@ export const updateStaff = (id, payload) =>
     method: "PATCH",
     body: JSON.stringify(payload)
   });
+
+export const createAccount = (payload) =>
+  request("/accounts", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+export const updateAccount = (id, payload) =>
+  request(`/accounts/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+
+export const deleteAccount = (id) =>
+  request(`/accounts/${id}`, {
+    method: "DELETE"
+  });
+
+export const createSupplier = (payload) =>
+  request("/suppliers", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+export const updateSupplier = (id, payload) =>
+  request(`/suppliers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+
+export const deleteSupplier = (id) =>
+  request(`/suppliers/${id}`, {
+    method: "DELETE"
+  });
+
+export const createPurchase = (payload) =>
+  request("/purchases", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+export const updatePurchase = (id, payload) =>
+  request(`/purchases/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+
+export const deletePurchase = (id) =>
+  request(`/purchases/${id}`, {
+    method: "DELETE"
+  });
+
 export const deleteStaff = (id) =>
   request(`/staff/${id}`, {
+    method: "DELETE"
+  });
+
+export const createAccounting = (payload) =>
+  request("/accounting", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
+export const updateAccounting = (id, payload) =>
+  request(`/accounting/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+
+export const deleteAccounting = (id) =>
+  request(`/accounting/${id}`, {
     method: "DELETE"
   });
 

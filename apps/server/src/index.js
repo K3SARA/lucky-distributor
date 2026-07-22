@@ -1044,6 +1044,7 @@ app.post("/staff", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
     name: body.name.trim(),
     role: body.role || "",
     phone: body.phone || "",
+    monthlySalary: Number(body.monthlySalary || 0),
     createdAt: new Date().toISOString()
   };
 
@@ -1090,6 +1091,289 @@ app.delete("/staff/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res
   const exists = (next.staff || []).some((item) => String(item.id || "") === String(id || ""));
   if (exists) {
     res.status(400).json({ message: "Unable to delete staff" });
+    return;
+  }
+
+  sendFullSync();
+  res.json({ ok: true });
+});
+
+app.get("/accounts", requireAuth, requireRole("admin", "manager"), (_req, res) => {
+  res.json(getState().accounts || []);
+});
+
+app.post("/accounts", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const body = req.body || {};
+  if (!body.name?.trim()) {
+    res.status(400).json({ message: "Account name is required" });
+    return;
+  }
+
+  const record = {
+    id: nanoid(12),
+    name: body.name.trim(),
+    type: body.type || "bank",
+    initialBalance: Number(body.initialBalance || 0),
+    createdAt: new Date().toISOString()
+  };
+
+  updateState((state) => {
+    state.accounts = state.accounts || [];
+    state.accounts.push(record);
+    return state;
+  });
+
+  sendFullSync();
+  res.status(201).json(record);
+});
+
+app.patch("/accounts/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+
+  const next = updateState((state) => {
+    state.accounts = state.accounts || [];
+    const idx = state.accounts.findIndex((item) => item.id === id);
+    if (idx === -1) return state;
+    state.accounts[idx] = { ...state.accounts[idx], ...body };
+    return state;
+  });
+
+  const updated = (next.accounts || []).find((item) => item.id === id);
+  if (!updated) {
+    res.status(404).json({ message: "Account not found" });
+    return;
+  }
+
+  sendFullSync();
+  res.json(updated);
+});
+
+app.delete("/accounts/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  const next = updateState((state) => {
+    state.accounts = state.accounts || [];
+    state.accounts = state.accounts.filter((item) => String(item.id || "") !== String(id || ""));
+    return state;
+  });
+
+  sendFullSync();
+  res.json({ ok: true });
+});
+// --- SUPPLIERS API ---
+app.post("/suppliers", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const body = req.body || {};
+  if (!body.name?.trim()) {
+    res.status(400).json({ message: "Supplier name is required" });
+    return;
+  }
+  const record = {
+    id: nanoid(12),
+    name: body.name.trim(),
+    company: (body.company || "").trim(),
+    phone: (body.phone || "").trim(),
+    address: (body.address || "").trim(),
+    createdAt: new Date().toISOString()
+  };
+  updateState((state) => {
+    state.suppliers = state.suppliers || [];
+    state.suppliers.push(record);
+    return state;
+  });
+  sendFullSync();
+  res.status(201).json(record);
+});
+
+app.patch("/suppliers/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const next = updateState((state) => {
+    state.suppliers = state.suppliers || [];
+    const idx = state.suppliers.findIndex((item) => item.id === id);
+    if (idx === -1) return state;
+    state.suppliers[idx] = { ...state.suppliers[idx], ...body };
+    return state;
+  });
+  const updated = (next.suppliers || []).find((item) => item.id === id);
+  if (!updated) return res.status(404).json({ message: "Supplier not found" });
+  sendFullSync();
+  res.json(updated);
+});
+
+app.delete("/suppliers/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  updateState((state) => {
+    state.suppliers = (state.suppliers || []).filter((item) => String(item.id || "") !== String(id || ""));
+    return state;
+  });
+  sendFullSync();
+  res.json({ ok: true });
+});
+
+// --- PURCHASES / SUPPLIER INVOICES API ---
+app.post("/purchases", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const body = req.body || {};
+  if (!body.supplierId?.trim() || !Number(body.totalAmount)) {
+    res.status(400).json({ message: "Supplier and Total Amount are required" });
+    return;
+  }
+  const record = {
+    id: nanoid(12),
+    supplierId: body.supplierId.trim(),
+    invoiceNo: (body.invoiceNo || "").trim(),
+    date: (body.date || new Date().toISOString().split("T")[0]).trim(),
+    dueDate: (body.dueDate || "").trim(),
+    totalAmount: Number(body.totalAmount || 0),
+    paidAmount: Number(body.paidAmount || 0),
+    status: body.status || "unpaid",
+    createdAt: new Date().toISOString()
+  };
+  updateState((state) => {
+    state.purchases = state.purchases || [];
+    state.purchases.push(record);
+    return state;
+  });
+  sendFullSync();
+  res.status(201).json(record);
+});
+
+app.patch("/purchases/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const next = updateState((state) => {
+    state.purchases = state.purchases || [];
+    const idx = state.purchases.findIndex((item) => item.id === id);
+    if (idx === -1) return state;
+    state.purchases[idx] = { ...state.purchases[idx], ...body };
+    return state;
+  });
+  const updated = (next.purchases || []).find((item) => item.id === id);
+  if (!updated) return res.status(404).json({ message: "Purchase invoice not found" });
+  sendFullSync();
+  res.json(updated);
+});
+
+app.delete("/purchases/:id", requireAuth, requireAdminOrManagerFullAccess, (req, res) => {
+  const { id } = req.params;
+  updateState((state) => {
+    state.purchases = (state.purchases || []).filter((item) => String(item.id || "") !== String(id || ""));
+    return state;
+  });
+  sendFullSync();
+  res.json({ ok: true });
+});
+
+app.post("/accounting", requireAuth, requireRole("admin", "manager"), (req, res) => {
+  const body = req.body || {};
+  const type = String(body.type || "expense").trim().toLowerCase();
+  const category = String(body.category || "General").trim();
+  const description = String(body.description || "").trim();
+  const date = String(body.date || new Date().toISOString().split("T")[0]).trim();
+  const amount = Number(body.amount);
+  const staffId = body.staffId ? String(body.staffId).trim() : null;
+  const sourceAccountId = body.sourceAccountId ? String(body.sourceAccountId).trim() : null;
+  const destinationAccountId = body.destinationAccountId ? String(body.destinationAccountId).trim() : null;
+  const supplierInvoiceId = body.supplierInvoiceId ? String(body.supplierInvoiceId).trim() : null;
+
+  if (!category || Number.isNaN(amount) || amount < 0) {
+    res.status(400).json({ message: "Category and a valid positive amount are required" });
+    return;
+  }
+
+  const newEntry = {
+    id: nanoid(12),
+    type,
+    category,
+    description,
+    date,
+    amount: roundMoney(amount),
+    staffId,
+    sourceAccountId,
+    destinationAccountId,
+    supplierInvoiceId,
+    createdAt: new Date().toISOString(),
+    createdBy: req.user?.username || "admin"
+  };
+
+  const next = updateState((state) => {
+    state.accounting = state.accounting || [];
+    state.accounting.unshift(newEntry);
+    if (type === "supplier_payment" && supplierInvoiceId) {
+      state.purchases = state.purchases || [];
+      const invoice = state.purchases.find(p => p.id === supplierInvoiceId);
+      if (invoice) {
+        invoice.paidAmount = roundMoney((invoice.paidAmount || 0) + amount);
+        if (invoice.paidAmount >= invoice.totalAmount) {
+          invoice.status = "paid";
+        } else if (invoice.paidAmount > 0) {
+          invoice.status = "partial";
+        } else {
+          invoice.status = "unpaid";
+        }
+      }
+    }
+    return state;
+  });
+
+  sendFullSync();
+  res.status(201).json(newEntry);
+});
+
+app.patch("/accounting/:id", requireAuth, requireRole("admin", "manager"), (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+
+  const next = updateState((state) => {
+    state.accounting = state.accounting || [];
+    const idx = state.accounting.findIndex((item) => item.id === id);
+    if (idx === -1) return state;
+    
+    const amount = body.amount !== undefined ? Number(body.amount) : state.accounting[idx].amount;
+    
+    state.accounting[idx] = {
+      ...state.accounting[idx],
+      ...body,
+      amount: Number.isFinite(amount) ? roundMoney(amount) : state.accounting[idx].amount
+    };
+    return state;
+  });
+
+  const updated = (next.accounting || []).find((item) => item.id === id);
+  if (!updated) {
+    res.status(404).json({ message: "Accounting entry not found" });
+    return;
+  }
+
+  sendFullSync();
+  res.json(updated);
+});
+
+app.delete("/accounting/:id", requireAuth, requireRole("admin", "manager"), (req, res) => {
+  const { id } = req.params;
+  const next = updateState((state) => {
+    state.accounting = state.accounting || [];
+    const entry = state.accounting.find((item) => String(item.id || "") === String(id || ""));
+    if (entry && entry.type === "supplier_payment" && entry.supplierInvoiceId) {
+      state.purchases = state.purchases || [];
+      const invoice = state.purchases.find(p => p.id === entry.supplierInvoiceId);
+      if (invoice) {
+        invoice.paidAmount = roundMoney((invoice.paidAmount || 0) - entry.amount);
+        if (invoice.paidAmount >= invoice.totalAmount) {
+          invoice.status = "paid";
+        } else if (invoice.paidAmount > 0) {
+          invoice.status = "partial";
+        } else {
+          invoice.status = "unpaid";
+        }
+      }
+    }
+    state.accounting = state.accounting.filter((item) => String(item.id || "") !== String(id || ""));
+    return state;
+  });
+
+  const exists = (next.accounting || []).some((item) => String(item.id || "") === String(id || ""));
+  if (exists) {
+    res.status(400).json({ message: "Unable to delete accounting entry" });
     return;
   }
 
@@ -1962,7 +2246,8 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
   }
   const saleCashier = String(sale.cashier || "").trim().toLowerCase();
   const actingUser = String(req.user?.username || "").trim().toLowerCase();
-  if (!saleCashier || saleCashier !== actingUser) {
+  const isAdmin = ["admin", "manager"].includes(String(req.user?.role || "").toLowerCase());
+  if (!isAdmin && (!saleCashier || saleCashier !== actingUser)) {
     res.status(403).json({ message: "Only the rep who created this sale can return its items" });
     return;
   }
@@ -2046,9 +2331,13 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
     const next = updateState((draft) => {
       draft.returns = draft.returns || [];
       draft.returns.unshift(record);
+      let returnedEmptyBottles = 0;
       for (const line of preparedLines) {
-        if (line.condition !== "good") continue;
         const product = draft.products.find((item) => item.id === line.productId);
+        if (product && product.returnableBottle !== false) {
+          returnedEmptyBottles += Number(line.quantity || 0);
+        }
+        if (line.condition !== "good") continue;
         if (product) {
           product.stock = Number((Number(product.stock || 0) + Number(line.quantity || 0)).toFixed(2));
         }
@@ -2056,6 +2345,7 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
       const saleIndex = (draft.sales || []).findIndex((item) => String(item.id) === saleId);
       if (saleIndex !== -1) {
         const targetSale = draft.sales[saleIndex];
+        targetSale.emptyBottlesOwed = Math.max(0, Number(targetSale.emptyBottlesOwed || 0) - returnedEmptyBottles);
         const previousRefundDue = roundMoney(Number(targetSale.refundDueAmount || 0));
         targetSale.returnedAmount = roundMoney(Number(targetSale.returnedAmount || 0) + returnTotalAmount);
         const recalculatedSale = recalculateSaleFinancials(targetSale);

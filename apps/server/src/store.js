@@ -25,13 +25,9 @@ let writeQueue = Promise.resolve();
 const normalizeState = (parsed) => ({
   ...seedState,
   ...(parsed || {}),
-  settings: { ...seedState.settings, ...((parsed || {}).settings || {}) },
-  products: (parsed || {}).products || seedState.products,
-  sales: (parsed || {}).sales || [],
-  returns: (parsed || {}).returns || [],
-  stockMovements: (parsed || {}).stockMovements || [],
-  customers: (parsed || {}).customers || [],
-  staff: (parsed || {}).staff || []
+  accounts: (parsed || {}).accounts || [],
+  suppliers: (parsed || {}).suppliers || [],
+  purchases: (parsed || {}).purchases || []
 });
 
 const writeStateFile = (state) => {

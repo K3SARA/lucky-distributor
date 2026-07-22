@@ -525,15 +525,17 @@
   background: #eff6ff;
   border: 1.5px solid #dbeafe;
   border-radius: 24px;
-  padding: 1.5rem 1.5rem;
+  padding: 2rem 1.75rem;
   box-shadow: 0 10px 25px rgba(59, 130, 246, 0.05);
+  display: flex;
+  flex-direction: column;
 }.rep-redesign-scope .mc-summary-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.25rem;
 }.rep-redesign-scope .mc-summary-head h3 {
-  font-size: 1rem;
+  font-size: 1.15rem;
   font-weight: 800;
   color: #0f172a;
   margin: 0;
@@ -545,22 +547,24 @@
   padding: 0;
   cursor: pointer;
 }.rep-redesign-scope .mc-summary-date {
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   color: #475569;
   font-weight: 500;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
 }.rep-redesign-scope .mc-summary-data {
   background: #e0f2fe; /* Light blue nested card background mirroring mock */
   border: 1px solid #bae6fd;
   border-radius: 20px;
-  padding: 1.25rem;
+  padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 1rem;
+  flex: 1;
+  justify-content: flex-end;
 }.rep-redesign-scope .mc-data-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.9rem;
+  font-size: 1.05rem;
 }.rep-redesign-scope .mc-data-row span {
   color: #334155;
   font-weight: 600;
@@ -573,7 +577,7 @@
   margin: 0.5rem 0;
   width: 100%;
 }.rep-redesign-scope .mc-data-total span, .rep-redesign-scope .mc-data-total strong {
-  font-size: 1.05rem;
+  font-size: 1.25rem;
 }.rep-redesign-scope /* Massive Sticky Action Footer */
 .mc-footer-bar {
   position: fixed;

@@ -72,7 +72,7 @@ const buildReceiptDocument = (sale) => {
   const createdAt = new Date(sale?.createdAt || Date.now());
   return [
     { type: "text", content: "Lucky Distributor", style: { align: "center", bold: true, size: 2 } },
-    { type: "text", content: "MATALE DISTRIBUTOR", style: { align: "center" } },
+    { type: "text", content: "LUCKY DAIRY DISTRIBUTOR - POLONNARUWA", style: { align: "center" } },
     { type: "line" },
     { type: "text", content: `Customer: ${sale?.customerName || "Walk-in"}` },
     { type: "text", content: `Date: ${Number.isNaN(createdAt.getTime()) ? "-" : createdAt.toLocaleString()}` },
@@ -359,7 +359,7 @@ export default function App() {
           body: JSON.stringify({ refreshToken: session.refreshToken })
         });
       }
-    } catch {}
+    } catch { }
     setSession(null);
     setCart([]);
     setMessage("");
@@ -587,7 +587,7 @@ export default function App() {
                   </Text>
                 </TouchableOpacity>
               ))}
-          </View>
+            </View>
           ) : null}
           {customerName.trim() && !selectedSavedCustomer ? <Text style={styles.outstandingText}>Select an existing saved customer.</Text> : null}
           <TextInput value={discount} onChangeText={setDiscount} placeholder="Bill Discount" keyboardType="numeric" style={styles.input} />

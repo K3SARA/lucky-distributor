@@ -1486,8 +1486,10 @@ button:disabled {
 .rep-redesign-scope .modern-cart-wrapper {
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(34dvh, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-bottom: 140px;
   gap: 0.75rem;
 }
 
@@ -1539,10 +1541,8 @@ button:disabled {
 }
 
 .rep-redesign-scope .mc-items-list {
-  min-height: 0;
-  overflow: auto;
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 0.72rem;
   padding-right: 0.15rem;
 }
@@ -1647,14 +1647,15 @@ button:disabled {
 }
 
 .rep-redesign-scope .mc-order-summary {
-  border-radius: 18px;
-  border: 1px solid #d5dfed;
-  background: linear-gradient(180deg, #fff 0%, #f5f8fe 100%);
-  padding: 0.82rem;
-  display: grid;
-  gap: 0.6rem;
-  max-height: 30dvh;
-  overflow: auto;
+  margin: 1.5rem 1.25rem;
+  background: #eff6ff;
+  border: 1.5px solid #dbeafe;
+  border-radius: 24px;
+  padding: 2rem 1.75rem;
+  box-shadow: 0 10px 25px rgba(59, 130, 246, 0.05);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 .rep-redesign-scope .mc-summary-head {
@@ -8507,6 +8508,20 @@ button:disabled {
     min-width: 100%;
   }
 
+  .admin-table.purchases-table header,
+  .admin-table.purchases-table article {
+    grid-template-columns: 0.8fr 1fr 1.2fr 0.8fr 1fr 1fr 1fr 0.8fr 1.5fr;
+    width: 100%;
+    min-width: 900px;
+  }
+
+  .admin-table.suppliers-table header,
+  .admin-table.suppliers-table article {
+    grid-template-columns: 1fr 1.2fr 1fr 1fr;
+    width: 100%;
+    min-width: 500px;
+  }
+
   .admin-table.customer-wise-report-table header,
   .admin-table.customer-wise-report-table article {
     grid-template-columns: 1.08fr 0.34fr 0.64fr 0.94fr;
@@ -9496,12 +9511,57 @@ button:disabled {
 
 @media (max-width: 760px) {
   .rep-redesign-scope .modern-cart-wrapper {
-    grid-template-rows: auto minmax(38dvh, 1fr) auto auto;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding-bottom: 140px;
   }
 
   .rep-redesign-scope .mc-order-summary {
-    max-height: 26dvh;
+    margin: 1.5rem auto;
+    background: #eff6ff;
+    border: 1.5px solid #dbeafe;
+    border-radius: 24px;
+    padding: 1.25rem 1rem;
+    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.05);
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    width: 280px;
   }
+
+  .rep-redesign-scope .mc-summary-head h3 { font-size: 0.9rem; }
+  .rep-redesign-scope .mc-summary-date { font-size: 0.8rem; margin-bottom: 1rem; }
+  .rep-redesign-scope .mc-summary-data { padding: 1rem; gap: 0.75rem; }
+  .rep-redesign-scope .mc-data-row { font-size: 0.85rem; }
+  .rep-redesign-scope .mc-data-total span, .rep-redesign-scope .mc-data-total strong { font-size: 1rem; }
+  
+  .rep-redesign-scope .mc-review-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px dashed #bae6fd;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .rep-redesign-scope .mc-review-title {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #475569;
+    margin: 0;
+  }
+  .rep-redesign-scope .mc-review-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .rep-redesign-scope .mc-review-grid article {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+  }
+  .rep-redesign-scope .mc-review-grid article span { color: #64748b; }
+  .rep-redesign-scope .mc-review-grid article strong { color: #0f172a; font-weight: 700; }
 }
 
 .rep-mode-toggle {
@@ -9538,4 +9598,63 @@ button:disabled {
   margin: 0 0 10px;
   color: var(--accent-2);
   font-weight: 600;
+}
+
+/* --- Accounting Module --- */
+.admin-accounting-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.accounting-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.accounting-head-actions button {
+  background: var(--accent-2);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accounting-filters {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: #f9f9f9;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.accounting-date-filters {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.accounting-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.accounting-badge.expense { background: #ffebee; color: #d32f2f; }
+.accounting-badge.salary { background: #e3f2fd; color: #1976d2; }
+.accounting-badge.advance { background: #fff3e0; color: #f57c00; }
+
+.accounting-form-modal {
+  width: 100%;
+  max-width: 400px;
 }

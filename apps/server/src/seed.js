@@ -22,7 +22,11 @@ export const seedState = {
   returns: [],
   stockMovements: [],
   customers: [],
-  staff: []
+  staff: [],
+  accounting: [],
+  accounts: [],
+  suppliers: [],
+  purchases: []
 };
 
 export const enrichSale = (sale) => {
