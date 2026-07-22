@@ -3514,6 +3514,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [loadingTimeTo, setLoadingTimeTo] = useState("");
   const [customerReportSearch, setCustomerReportSearch] = useState("");
   const [customerPanelSearch, setCustomerPanelSearch] = useState("");
+  const [customerRouteFilter, setCustomerRouteFilter] = useState("All");
   const [stockPanelSearch, setStockPanelSearch] = useState("");
   const [stockLogSearch, setStockLogSearch] = useState("");
   const [stockLogDateFrom, setStockLogDateFrom] = useState("");
@@ -4039,16 +4040,23 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     }
     return [...map.values()].sort((a, b) => b.spent - a.spent);
   }, [state.sales, state.customers, customerCreditMap]);
+  const uniqueCustomerRoutes = useMemo(() => {
+    const routes = new Set(customerRows.map((row) => String(row.route || "").trim()).filter(Boolean));
+    return ["All", ...Array.from(routes).sort()];
+  }, [customerRows]);
+
   const filteredCustomerRows = useMemo(() => {
     const term = customerPanelSearch.trim().toLowerCase();
-    if (!term) return customerRows;
-    return customerRows.filter((row) =>
-      String(row.name || "").toLowerCase().includes(term)
-      || String(row.phone || "").toLowerCase().includes(term)
-      || String(row.address || "").toLowerCase().includes(term)
-      || String(row.route || "").toLowerCase().includes(term)
-    );
-  }, [customerRows, customerPanelSearch]);
+    const routeFilter = customerRouteFilter === "All" ? "" : customerRouteFilter.toLowerCase();
+    return customerRows.filter((row) => {
+      if (routeFilter && String(row.route || "").trim().toLowerCase() !== routeFilter) return false;
+      if (!term) return true;
+      return String(row.name || "").toLowerCase().includes(term)
+        || String(row.phone || "").toLowerCase().includes(term)
+        || String(row.address || "").toLowerCase().includes(term)
+        || String(row.route || "").toLowerCase().includes(term);
+    });
+  }, [customerRows, customerPanelSearch, customerRouteFilter]);
   const sortedCustomerRows = useMemo(
     () => sortRows(filteredCustomerRows, "customers", "name", {
       name: (row) => row.name,
@@ -4056,7 +4064,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       orders: (row) => Number(row.orders || 0),
       spent: (row) => Number(row.spent || 0),
       openingOutstanding: (row) => Number(row.openingOutstanding || 0),
-      creditLimit: (row) => Number(row.creditLimit || 0),
+      route: (row) => String(row.route || ""),
       outstanding: (row) => Number(row.outstanding || 0),
       daysLeft: (row) => {
         const value = row.outstandingDaysLeft;
@@ -6779,6 +6787,21 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 onChange={(e) => setCustomerPanelSearch(e.target.value)}
                 placeholder="Search Customer"
               />
+              {uniqueCustomerRoutes.length > 1 ? (
+                <div className="customers-route-filters" style={{ display: "flex", gap: "8px", marginTop: "12px", marginBottom: "8px", flexWrap: "wrap" }}>
+                  {uniqueCustomerRoutes.map((route) => (
+                    <button
+                      key={route}
+                      type="button"
+                      className={customerRouteFilter === route ? "route-filter-btn active" : "ghost route-filter-btn"}
+                      onClick={() => setCustomerRouteFilter(route)}
+                      style={{ padding: "6px 12px", fontSize: "12px", borderRadius: "20px" }}
+                    >
+                      {route}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="admin-table customer-table customers-table">
                 <div className="customers-table-divider">
                   <span>CUSTOMERS TABLE</span>
@@ -6788,7 +6811,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "phone")}>Phone{sortMark("customers", "phone")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "orders")}>Orders{sortMark("customers", "orders")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "spent")}>Total Spent (LKR){sortMark("customers", "spent")}</button>
-                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "creditLimit")}>Credit Limit (LKR){sortMark("customers", "creditLimit")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("customers", "route")}>Route{sortMark("customers", "route")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "outstanding")}>Outstanding (LKR){sortMark("customers", "outstanding")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("customers", "daysLeft")}>Days Left{sortMark("customers", "daysLeft")}</button>
                 </header>
@@ -6810,7 +6833,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                     <span>{row.phone || "-"}</span>
                     <span>{row.orders}</span>
                     <span>{formatLkrValue(row.spent || 0)}</span>
-                    <span>{formatLkrValue(row.creditLimit || 0)}</span>
+                    <span>{row.route || "-"}</span>
                     <span className={Number(row.outstanding || 0) > 0 ? "outstanding-text" : ""}>{formatLkrValue(row.outstanding || 0)}</span>
                     <span className={String(row.outstandingDaysLabel || "").toLowerCase().includes("overdue") ? "outstanding-text" : ""}>{row.outstandingDaysLabel || "-"}</span>
                   </article>
