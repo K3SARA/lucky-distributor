@@ -2314,7 +2314,7 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
         grossAmount: financials.grossAmount,
         billDiscountShare: financials.billDiscountShare,
         returnUnitPrice: financials.returnUnitPrice,
-        returnAmount: financials.returnAmount
+        returnAmount: condition === "good" ? financials.returnAmount : 0
       });
     }
 
@@ -2337,8 +2337,15 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
         if (product && product.returnableBottle !== false) {
           returnedEmptyBottles += Number(line.quantity || 0);
         }
-        if (line.condition !== "good") continue;
+        if (line.condition !== "good") {
+          // Replacement: deduct fresh item from stock
+          if (product) {
+            product.stock = Number((Number(product.stock || 0) - Number(line.quantity || 0)).toFixed(2));
+          }
+          continue;
+        }
         if (product) {
+          // Refund: add returned good item back to stock
           product.stock = Number((Number(product.stock || 0) + Number(line.quantity || 0)).toFixed(2));
         }
       }

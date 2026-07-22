@@ -424,6 +424,7 @@ const saleReturnedQtyByProduct = (sale, returns = []) => {
   for (const entry of (returns || [])) {
     if (String(entry.saleId || "") !== String(sale?.id || "")) continue;
     for (const line of (entry.lines || [])) {
+      if (line.condition !== "good") continue;
       const key = String(line.productId || "").trim();
       if (!key) continue;
       map.set(key, Number(map.get(key) || 0) + Number(line.quantity || 0));
@@ -713,10 +714,13 @@ const openSaleReceiptPrint = ({
   }
   const customerEmptyOutstanding = Math.max(0, customerEmptyOwed - customerEmptyCollected);
 
+  const totalEmptiesToCollect = billEmptyOutstanding + customerEmptyOutstanding;
+
   const emptySummaryHtml = `
 <div class="empty-summary"><div class="empty-title">Empty Bottles Summary</div>
 <div class="summary-row"><span>This Bill Pending</span><span>${billEmptyOutstanding}</span></div>
-<div class="summary-row"><span>Customer Outstanding</span><span>${customerEmptyOutstanding}</span></div></div>
+<div class="summary-row"><span>Customer Outstanding</span><span>${customerEmptyOutstanding}</span></div>
+<div class="summary-row" style="margin-top: 4px; padding-top: 4px; border-top: 1px dotted #111; font-weight: 800;"><span>Total to Collect</span><span>${totalEmptiesToCollect}</span></div></div>
 `;
 
   const printWindow = window.open("", "_blank", "width=380,height=640");
@@ -757,7 +761,7 @@ th { font-size: 11.5px; text-transform: uppercase; border-bottom: 1px solid #111
 .sign-label { font-size: 12px; font-weight: 600; }
 .powered { text-align: center; font-size: 11px; margin-top: 24px; color: #444; }
 </style></head><body><div class="sheet">
-<div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">Kanishka Perera<br/>LUCKY DAIRY DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Tenna - Matale. Tel : 076-0470123</div></div></div>
+<div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">LUCKY LANKA DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Polonnaruwa. Tel : +94 74 014 2898, +94 27 205 4887</div></div></div>
 <div class="meta">
 Customer: ${escapeHtml(pickedCustomer)}<br/>
 Date: ${escapeHtml(dateLabel)}<br/>
@@ -1036,7 +1040,10 @@ const CashierView = ({
   const filteredRepCustomers = useMemo(() => {
     const term = String(repCustomerSearch || "").trim().toLowerCase();
     if (!term) return savedCustomers;
-    return savedCustomers.filter((customer) => String(customer.name || "").toLowerCase().includes(term));
+    return savedCustomers.filter((customer) => 
+      String(customer.name || "").toLowerCase().includes(term) ||
+      String(customer.route || "").toLowerCase().includes(term)
+    );
   }, [repCustomerSearch, savedCustomers]);
   const customerOpeningOutstandingMap = useMemo(() => {
     const map = new Map();
@@ -1231,11 +1238,13 @@ const CashierView = ({
     }), null);
   }, [customerName, state.customers]);
   const [customerPhoneDraft, setCustomerPhoneDraft] = useState("");
-  const [savingCustomerPhone, setSavingCustomerPhone] = useState(false);
+  const [customerAddressDraft, setCustomerAddressDraft] = useState("");
+  const [savingCustomerDetails, setSavingCustomerDetails] = useState(false);
 
   useEffect(() => {
     setCustomerPhoneDraft(String(selectedSavedCustomer?.phone || ""));
-  }, [selectedSavedCustomer?.id, selectedSavedCustomer?.phone]);
+    setCustomerAddressDraft(String(selectedSavedCustomer?.address || ""));
+  }, [selectedSavedCustomer?.id, selectedSavedCustomer?.phone, selectedSavedCustomer?.address]);
 
   const triggerAddHaptic = () => {
     const now = Date.now();
@@ -1470,9 +1479,12 @@ const CashierView = ({
       if (!Number.isFinite(qty) || qty <= 0) return acc;
       const preview = returnLinePreview(returnSale, line, qty);
       acc.qty += qty;
-      acc.amount += Number(preview.returnAmount || 0);
-      if (String(draft.condition || "good").toLowerCase() === "good") acc.goodQty += qty;
-      else acc.damagedQty += qty;
+      if (String(draft.condition || "good").toLowerCase() === "good") {
+        acc.amount += Number(preview.returnAmount || 0);
+        acc.goodQty += qty;
+      } else {
+        acc.damagedQty += qty;
+      }
       return acc;
     }, { qty: 0, amount: 0, goodQty: 0, damagedQty: 0 });
   }, [returnLinesDraft, returnSale]);
@@ -1874,20 +1886,20 @@ const CashierView = ({
     }
   };
 
-  const saveBillingCustomerPhone = async () => {
+  const saveBillingCustomerDetails = async () => {
     if (!selectedSavedCustomer) return;
     try {
-      setSavingCustomerPhone(true);
+      setSavingCustomerDetails(true);
       await updateCustomer(selectedSavedCustomer.id, {
         name: selectedSavedCustomer.name || customerName.trim(),
         phone: customerPhoneDraft.trim(),
-        address: selectedSavedCustomer.address || ""
+        address: customerAddressDraft.trim()
       });
-      setMessage("Customer phone updated.");
+      setMessage("Customer details updated.");
     } catch (error) {
-      setMessage(error.message || "Unable to update customer phone.");
+      setMessage(error.message || "Unable to update customer details.");
     } finally {
-      setSavingCustomerPhone(false);
+      setSavingCustomerDetails(false);
     }
   };
   const repBillingSteps = [
@@ -2080,6 +2092,37 @@ const CashierView = ({
                             {selectedCustomerDiscountLimit > 0 ? <p>Discount Limit: {currency(selectedCustomerDiscountLimit)}</p> : null}
                             {selectedCustomerBundleDiscountLimit > 0 ? <p>Bundle Limit: {currency(selectedCustomerBundleDiscountLimit)} per bundle</p> : null}
                             {selectedSavedCustomer?.phone ? <p>Phone: {selectedSavedCustomer.phone}</p> : null}
+                            
+                            {(!selectedSavedCustomer.phone || !selectedSavedCustomer.address) && (
+                              <div className="rep-incomplete-warning-card">
+                                <p className="rep-incomplete-warning-title">
+                                  <span className="warning-icon">⚠️</span> Incomplete Details
+                                </p>
+                                <p className="rep-incomplete-warning-subtitle">Please fill in the missing customer details.</p>
+                                <div className="rep-incomplete-warning-form">
+                                  <input 
+                                    className="rep-incomplete-warning-input"
+                                    value={customerPhoneDraft} 
+                                    onChange={e => setCustomerPhoneDraft(e.target.value)} 
+                                    placeholder="Mobile Number" 
+                                  />
+                                  <input 
+                                    className="rep-incomplete-warning-input"
+                                    value={customerAddressDraft} 
+                                    onChange={e => setCustomerAddressDraft(e.target.value)} 
+                                    placeholder="Address" 
+                                  />
+                                  <button 
+                                    type="button" 
+                                    className="rep-incomplete-warning-button"
+                                    onClick={saveBillingCustomerDetails} 
+                                    disabled={savingCustomerDetails} 
+                                  >
+                                    {savingCustomerDetails ? 'Saving...' : 'Update Details'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </>
                         ) : (
                           <p className="outstanding-text">Select an existing saved customer from the list.</p>
@@ -2373,8 +2416,8 @@ const CashierView = ({
                               onChange={(e) => setCustomerPhoneDraft(e.target.value)}
                               placeholder="Customer phone"
                             />
-                            <button type="button" className="ghost" onClick={saveBillingCustomerPhone} disabled={savingCustomerPhone}>
-                              {savingCustomerPhone ? "Saving..." : "Save"}
+                            <button type="button" className="ghost" onClick={saveBillingCustomerDetails} disabled={savingCustomerDetails}>
+                              {savingCustomerDetails ? "Saving..." : "Save"}
                             </button>
                           </div>
                         </>
@@ -2584,7 +2627,7 @@ const CashierView = ({
                           ) : null}
                           {draftQty > 0 ? (
                             <p className="return-line-credit">
-                              Return credit {currency(preview.returnAmount)}
+                              {draft.condition === "good" ? `Return credit ${currency(preview.returnAmount)}` : `Replacement issued from stock (No financial credit)`}
                             </p>
                           ) : null}
                         </div>
@@ -3522,7 +3565,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [purchaseForm, setPurchaseForm] = useState({ id: "", supplierId: "", invoiceNo: "", date: "", dueDate: "", totalAmount: "", paidAmount: "", status: "unpaid" });
   const [notice, setNotice] = useState("");
 
-  const [customerForm, setCustomerForm] = useState({ id: "", name: "", phone: "", address: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
+  const [customerForm, setCustomerForm] = useState({ id: "", name: "", phone: "", address: "", route: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
   const [staffForm, setStaffForm] = useState({ id: "", authUserId: "", name: "", role: "", phone: "", monthlySalary: "", username: "", password: "", authRole: "cashier" });
   const [stockMode, setStockMode] = useState("add");
   const [stockForm, setStockForm] = useState({ productId: "", quantity: "", stock: "", sku: "", invoicePrice: "", billingPrice: "", mrp: "" });
@@ -4003,6 +4046,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       String(row.name || "").toLowerCase().includes(term)
       || String(row.phone || "").toLowerCase().includes(term)
       || String(row.address || "").toLowerCase().includes(term)
+      || String(row.route || "").toLowerCase().includes(term)
     );
   }, [customerRows, customerPanelSearch]);
   const sortedCustomerRows = useMemo(
@@ -5545,7 +5589,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   };
 
   const openCustomerAdd = () => {
-    setCustomerForm({ id: "", name: "", phone: "", address: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
+    setCustomerForm({ id: "", name: "", phone: "", address: "", route: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
     setShowCustomerForm(true);
   };
 
@@ -5560,6 +5604,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       name: first.name,
       phone: first.phone || "",
       address: first.address || "",
+      route: first.route || "",
       openingOutstanding: first.openingOutstanding ? String(first.openingOutstanding) : "",
       creditLimit: first.creditLimit ? String(first.creditLimit) : "",
       discountLimit: first.discountLimit ? String(first.discountLimit) : "",
@@ -5582,6 +5627,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       name: matched.name || row.name || "",
       phone: matched.phone || row.phone || "",
       address: matched.address || row.address || "",
+      route: matched.route || row.route || "",
       openingOutstanding: matched.openingOutstanding ? String(matched.openingOutstanding) : "",
       creditLimit: matched.creditLimit ? String(matched.creditLimit) : "",
       discountLimit: matched.discountLimit ? String(matched.discountLimit) : "",
@@ -5630,7 +5676,8 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     const payload = {
       name: customerForm.name.trim(),
       phone: customerForm.phone,
-      address: customerForm.address
+      address: customerForm.address,
+      route: (customerForm.route || "").trim()
     };
     if (canManageCustomerOpeningOutstanding) {
       payload.openingOutstanding = Number(openingOutstanding.toFixed(2));
@@ -8877,12 +8924,19 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               {!canManageCustomerLimits ? (
                 <p className="form-hint customer-form-lock-note">Manager limited access cannot edit customer details. Enable full access to unlock customer editing.</p>
               ) : null}
+              {!canManageCustomerLimits ? (
+                <div style={{ height: "4px" }} />
+              ) : null}
               {!canManageOutstandingAdjustment ? (
                 <p className="form-hint customer-form-lock-note">Only admin can reduce or write off total outstanding.</p>
               ) : null}
               <label className="customer-entry-field customer-entry-field-full">
                 <span>Address</span>
                 <textarea value={customerForm.address} onChange={(e) => setCustomerForm((c) => ({ ...c, address: e.target.value }))} placeholder="Address" />
+              </label>
+              <label className="customer-entry-field">
+                <span>Route</span>
+                <input value={customerForm.route} onChange={(e) => setCustomerForm((c) => ({ ...c, route: e.target.value }))} placeholder="Route (e.g., North District)" />
               </label>
               <div className="customer-entry-actions">
                 <button type="button" onClick={saveCustomer}>Save Customer</button>
@@ -9117,7 +9171,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               </div>
             </div>
             <div className="receipt-preview">
-              <h4>Kanishka Perera - LUCKY DAIRY DISTRIBUTOR - POLONNARUWA</h4>
+              <h4>LUCKY LANKA DISTRIBUTOR -POLONNARUWA</h4>
               <p>{new Date(viewedSale.createdAt).toLocaleString()} • {viewedSale.customerName} • {viewedSale.lorry || "-"} • {viewedSale.cashier || "-"} • {viewedSalePaymentDisplay.label}{viewedSalePaymentDisplay.detail ? ` (${viewedSalePaymentDisplay.detail})` : ""}</p>
               <div className="admin-table receipt-table">
                 <header>
@@ -9805,10 +9859,15 @@ export const App = () => {
       if (!targetSale) return current;
 
       const returnedByProduct = new Map();
+      const replacedByProduct = new Map();
       for (const ret of (current.returns || [])) {
         if (String(ret.saleId) !== String(saleId)) continue;
         for (const line of (ret.lines || [])) {
-          returnedByProduct.set(line.productId, (returnedByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
+          if (line.condition === "good") {
+            returnedByProduct.set(line.productId, (returnedByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
+          } else {
+            replacedByProduct.set(line.productId, (replacedByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
+          }
         }
       }
 
@@ -9818,8 +9877,9 @@ export const App = () => {
           const saleLine = (targetSale.lines || []).find((line) => line.productId === product.id);
           if (!saleLine) return product;
           const sold = Number(saleLine.quantity || 0);
-          const alreadyReturned = Number(returnedByProduct.get(product.id) || 0);
-          const netSold = Math.max(0, sold - alreadyReturned);
+          const alreadyReturnedGood = Number(returnedByProduct.get(product.id) || 0);
+          const replaced = Number(replacedByProduct.get(product.id) || 0);
+          const netSold = Math.max(0, sold - alreadyReturnedGood + replaced);
           return {
             ...product,
             stock: Number((Number(product.stock || 0) + netSold).toFixed(2))
