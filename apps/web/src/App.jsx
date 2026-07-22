@@ -6281,17 +6281,19 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       const nameIndex = header.indexOf("name");
       const phoneIndex = header.indexOf("phone");
       const addressIndex = header.indexOf("address");
+      const routeIndex = header.indexOf("route");
       if (nameIndex < 0) {
-        setNotice("Customer import requires at least: name,phone,address");
+        setNotice("Customer import requires at least: name");
         return;
       }
       const rows = lines.slice(1).map(parseCsvLine).map((cols) => ({
         name: String(cols[nameIndex] || "").trim(),
-        phone: String(cols[phoneIndex] || "").trim(),
-        address: String(cols[addressIndex] || "").trim()
+        phone: phoneIndex >= 0 ? String(cols[phoneIndex] || "").trim() : "",
+        address: addressIndex >= 0 ? String(cols[addressIndex] || "").trim() : "",
+        route: routeIndex >= 0 ? String(cols[routeIndex] || "").trim() : ""
       })).filter((row) => row.name);
       if (!rows.length) {
-        setNotice("No valid customer rows found. Use: name,phone,address");
+        setNotice("No valid customer rows found.");
         return;
       }
       const existingByName = new Map((state.customers || []).map((row) => [String(row.name || "").trim().toLowerCase(), row]));
