@@ -3642,6 +3642,19 @@ button:disabled {
   font-weight: 700;
 }
 
+.table-actions {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.table-actions button {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.78rem;
+  border-radius: 6px;
+}
+
 .stock-table header,
 .stock-table article {
   grid-template-columns: 0.95fr 1fr 0.95fr 0.62fr 0.76fr;
@@ -6196,40 +6209,48 @@ button:disabled {
   font-size: 0.72rem;
 }
 
-.customers-summary-grid {
+.customers-summary-grid,
+.accounting-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(120px, 1fr));
   gap: 0.45rem;
 }
 
-.customers-summary-grid article {
+.customers-summary-grid article,
+.accounting-summary-grid article {
   border: 1px solid #d5e0ef;
   border-radius: 12px;
   background: #fff;
   padding: 0.5rem 0.55rem;
 }
 
-.customers-summary-grid article span {
+.customers-summary-grid article span,
+.accounting-summary-grid article span {
   display: block;
   color: #5a6c84;
   font-size: 0.72rem;
   font-weight: 700;
 }
 
-.customers-summary-grid article strong {
+.customers-summary-grid article strong,
+.accounting-summary-grid article strong,
+.accounting-summary-grid article h4 {
   display: block;
   margin-top: 0.2rem;
   color: #12263f;
   font-size: 1.02rem;
 }
 
-.customers-summary-grid article.warn {
+.customers-summary-grid article.warn,
+.accounting-summary-grid article.warn {
   border-color: #f0cdcb;
   background: #fff7f7;
 }
 
 .customers-summary-grid article.warn span,
-.customers-summary-grid article.warn strong {
+.customers-summary-grid article.warn strong,
+.accounting-summary-grid article.warn span,
+.accounting-summary-grid article.warn h4 {
   color: #8f1c1c;
 }
 
@@ -8325,7 +8346,8 @@ button:disabled {
     font-size: 0.9rem;
   }
 
-  .customers-summary-grid {
+  .customers-summary-grid,
+  .accounting-summary-grid {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -8526,6 +8548,13 @@ button:disabled {
     grid-template-columns: 1fr 1.2fr 1fr 1fr;
     width: 100%;
     min-width: 500px;
+  }
+
+  .admin-table.accounting-table header,
+  .admin-table.accounting-table article {
+    grid-template-columns: 0.8fr 0.8fr 1.2fr 1.5fr 1fr 1fr 0.8fr;
+    width: 100%;
+    min-width: 900px;
   }
 
   .admin-table.customer-wise-report-table header,
@@ -9621,14 +9650,172 @@ button:disabled {
   gap: 12px;
 }
 
-.accounting-head-actions button {
-  background: var(--accent-2);
-  color: #fff;
+.accounting-actions {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.accounting-actions button {
+  padding: 0.55rem 1.1rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.85rem;
   border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-weight: 600;
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.2);
+  transition: all 0.2s ease;
   cursor: pointer;
+}
+
+.accounting-actions button:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 16px rgba(30, 136, 229, 0.3);
+}
+
+.accounting-actions button.ghost {
+  background: white;
+  color: #1e88e5;
+  border: 1.5px solid #bbdefb;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+}
+
+.accounting-actions button.ghost:hover {
+  border-color: #1e88e5;
+  background: #f8fbff;
+}
+
+/* Premium Modal Styling */
+.premium-modal-card {
+  width: min(520px, 100%);
+  max-height: 85vh;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 1px solid rgba(220, 230, 240, 0.8);
+  box-shadow: 0 30px 60px rgba(12, 28, 48, 0.15), 0 0 0 1px rgba(255,255,255,0.8) inset;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.premium-modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #eef2f7;
+  background: linear-gradient(180deg, #fafcff 0%, #ffffff 100%);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.premium-modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #12263f;
+  font-weight: 800;
+}
+
+.premium-modal-header button {
+  background: #eef2f7;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  padding: 0.35rem 0.7rem;
+  color: #495a71;
+  font-weight: 700;
+  transition: all 0.15s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.premium-modal-header button:hover {
+  background: #dce4ef;
+  color: #12263f;
+}
+
+.premium-modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.premium-modal-body .form-group {
+  margin: 0;
+}
+
+.premium-modal-body .form-group label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #495a71;
+  margin-bottom: 0.4rem;
+}
+
+.premium-modal-body input,
+.premium-modal-body select,
+.premium-modal-body textarea {
+  border-radius: 10px;
+  border: 1px solid #dce4ef;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  background: #fbfdff;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.premium-modal-body input:focus,
+.premium-modal-body select:focus,
+.premium-modal-body textarea:focus {
+  border-color: #1e88e5;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(30, 136, 229, 0.1);
+  outline: none;
+}
+
+.premium-modal-footer {
+  padding: 1.25rem 1.5rem;
+  background: #f8fbff;
+  border-top: 1px solid #eef2f7;
+  border-radius: 0 0 20px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.premium-modal-footer button {
+  padding: 0.65rem 1.4rem;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.premium-modal-footer button.primary {
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.2);
+}
+
+.premium-modal-footer button.primary:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 16px rgba(30, 136, 229, 0.3);
+}
+
+.premium-modal-footer button.ghost {
+  background: white;
+  color: #1e88e5;
+  border: 1.5px solid #bbdefb;
+}
+
+.premium-modal-footer button.ghost:hover {
+  border-color: #1e88e5;
+  background: #eff6ff;
 }
 
 .accounting-filters {

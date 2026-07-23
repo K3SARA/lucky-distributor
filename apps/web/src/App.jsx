@@ -7237,12 +7237,12 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   }
                 });
                 return (state.accounts || []).length > 0 ? (
-                  <div className="account-balances-widget" style={{ display: "flex", gap: "12px", padding: "12px 0", overflowX: "auto", marginBottom: "16px" }}>
+                  <div className="accounting-summary-grid" style={{ marginBottom: "16px" }}>
                     {(state.accounts || []).map(acc => (
-                      <div key={acc.id} className="stat-card" style={{ minWidth: "160px", padding: "12px", border: "1px solid #ddd", borderRadius: "8px", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-                        <p style={{ margin: "0 0 4px 0", fontSize: "0.85rem", color: "#666" }}>{acc.name}</p>
-                        <h4 style={{ margin: 0, color: balances[acc.id] >= 0 ? "#1e88e5" : "#e53935", fontSize: "1.2rem" }}>{formatLkrValue(balances[acc.id])}</h4>
-                      </div>
+                      <article key={acc.id} className={balances[acc.id] < 0 ? "warn" : ""}>
+                        <span>{acc.name}</span>
+                        <h4 style={{ color: balances[acc.id] >= 0 ? "#1e88e5" : "#e53935", margin: 0 }}>{formatLkrValue(balances[acc.id])}</h4>
+                      </article>
                     ))}
                   </div>
                 ) : null;
@@ -7264,169 +7264,168 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               </div>
 
               <div className="admin-table accounting-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Type</th>
-                      <th>Category</th>
-                      <th>Description</th>
-                      <th>Staff</th>
-                      <th className="number-cell">Amount</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(state.accounting || [])
-                      .filter((item) => {
-                        if (accountingSearch && !item.category?.toLowerCase().includes(accountingSearch.toLowerCase()) && !item.description?.toLowerCase().includes(accountingSearch.toLowerCase())) return false;
-                        if (accountingDateFrom && item.date < accountingDateFrom) return false;
-                        if (accountingDateTo && item.date > accountingDateTo) return false;
-                        return true;
-                      })
-                      .sort((a, b) => new Date(b.date) - new Date(a.date))
-                      .map((item) => {
-                        const staffMember = (state.staff || []).find((s) => s.id === item.staffId);
-                        return (
-                          <tr key={item.id}>
-                            <td>{item.date}</td>
-                            <td><span className={`accounting-badge ${item.type}`}>{item.type}</span></td>
-                            <td>{item.category}</td>
-                            <td>{item.description}</td>
-                            <td>{staffMember ? staffMember.name : "-"}</td>
-                            <td className="number-cell amount-cell">LKR {formatLkrValue(item.amount)}</td>
-                            <td>
-                              <div className="table-actions">
-                                {item.type === "salary" && staffMember && (
-                                  <button type="button" className="ghost primary-text" onClick={() => openPayslipPrint({ entry: item, staff: staffMember })}>Print</button>
-                                )}
-                                <button type="button" className="ghost" onClick={() => {
-                                  let coaType = "Operating Expenses";
-                                  let coaGroup = "Vehicle Expenses";
-                                  let coaSub = "Lorry Fuel";
-                                  if (item.category && item.category.includes(" > ")) {
-                                    const parts = item.category.split(" > ");
-                                    if (parts.length === 3) {
-                                      coaType = parts[0].trim();
-                                      coaGroup = parts[1].trim();
-                                      coaSub = parts[2].trim();
-                                    }
-                                  } else if (item.category) {
-                                    // Fallback for old single-string categories
-                                    coaType = "Miscellaneous";
-                                    coaGroup = "Other";
-                                    coaSub = item.category;
-                                  }
-                                  setAccountingForm({ ...item, amount: item.amount.toString(), coaType, coaGroup, coaSub, sourceAccountId: item.sourceAccountId || "", destinationAccountId: item.destinationAccountId || "" });
-                                  setShowAccountingForm(true);
-                                }}>Edit</button>
-                                <button type="button" className="ghost danger-text" onClick={() => deleteAccountingEntry(item.id)}>Delete</button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
+                <header>
+                  <span>Date</span>
+                  <span>Type</span>
+                  <span>Category</span>
+                  <span>Description</span>
+                  <span>Staff</span>
+                  <span className="number-cell">Amount</span>
+                  <span>Actions</span>
+                </header>
+                {(state.accounting || [])
+                  .filter((item) => {
+                    if (accountingSearch && !item.category?.toLowerCase().includes(accountingSearch.toLowerCase()) && !item.description?.toLowerCase().includes(accountingSearch.toLowerCase())) return false;
+                    if (accountingDateFrom && item.date < accountingDateFrom) return false;
+                    if (accountingDateTo && item.date > accountingDateTo) return false;
+                    return true;
+                  })
+                  .sort((a, b) => new Date(b.date) - new Date(a.date))
+                  .map((item) => {
+                    const staffMember = (state.staff || []).find((s) => s.id === item.staffId);
+                    return (
+                      <article key={item.id}>
+                        <span>{item.date}</span>
+                        <span><span className={`accounting-badge ${item.type}`}>{item.type}</span></span>
+                        <span>{item.category}</span>
+                        <span>{item.description}</span>
+                        <span>{staffMember ? staffMember.name : "-"}</span>
+                        <span className="number-cell amount-cell" style={{ color: "#1e88e5", fontWeight: "600" }}>LKR {formatLkrValue(item.amount)}</span>
+                        <span>
+                          <div className="table-actions">
+                            {item.type === "salary" && staffMember && (
+                              <button type="button" className="ghost primary-text" onClick={() => openPayslipPrint({ entry: item, staff: staffMember })}>Print</button>
+                            )}
+                            <button type="button" className="ghost" onClick={() => {
+                              let coaType = "Operating Expenses";
+                              let coaGroup = "Vehicle Expenses";
+                              let coaSub = "Lorry Fuel";
+                              if (item.category && item.category.includes(" > ")) {
+                                const parts = item.category.split(" > ");
+                                if (parts.length === 3) {
+                                  coaType = parts[0].trim();
+                                  coaGroup = parts[1].trim();
+                                  coaSub = parts[2].trim();
+                                }
+                              } else if (item.category) {
+                                // Fallback for old single-string categories
+                                coaType = "Miscellaneous";
+                                coaGroup = "Other";
+                                coaSub = item.category;
+                              }
+                              setAccountingForm({ ...item, amount: item.amount.toString(), coaType, coaGroup, coaSub, sourceAccountId: item.sourceAccountId || "", destinationAccountId: item.destinationAccountId || "" });
+                              setShowAccountingForm(true);
+                            }}>Edit</button>
+                            <button type="button" className="ghost danger-text" onClick={() => deleteAccountingEntry(item.id)}>Delete</button>
+                          </div>
+                        </span>
+                      </article>
+                    );
+                  })}
               </div>
               
               {showAccountingForm ? (
                 <div className="low-stock-modal" onClick={() => setShowAccountingForm(false)}>
-                  <div className="low-stock-modal-card accounting-form-modal" onClick={(e) => e.stopPropagation()}>
-                    <h3>{accountingForm.id ? "Edit Record" : "Add Record"}</h3>
-                    <div className="form-group">
-                      <label>Type</label>
-                      <select value={accountingForm.type} onChange={(e) => setAccountingForm({ ...accountingForm, type: e.target.value, staffId: ["expense", "income", "transfer"].includes(e.target.value) ? "" : accountingForm.staffId })}>
-                        <option value="expense">General Expense</option>
-                        <option value="salary">Staff Salary</option>
-                        <option value="advance">Staff Advance</option>
-                        <option value="income">Income</option>
-                        <option value="transfer">Account Transfer</option>
-                      </select>
+                  <div className="premium-modal-card" onClick={(e) => e.stopPropagation()}>
+                    <div className="premium-modal-header">
+                      <h3>{accountingForm.id ? "Edit Record" : "Add Record"}</h3>
+                      <button type="button" onClick={() => setShowAccountingForm(false)}>Close</button>
                     </div>
-                    {["expense", "transfer", "supplier_payment"].includes(accountingForm.type) && (
+                    <div className="premium-modal-body">
                       <div className="form-group">
-                        <label>{accountingForm.type === "transfer" ? "Transfer From" : "Paid From (Account)"}</label>
-                        <select value={accountingForm.sourceAccountId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, sourceAccountId: e.target.value })}>
-                          <option value="">-- Select Account --</option>
-                          {(state.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>)}
+                        <label>Type</label>
+                        <select value={accountingForm.type} onChange={(e) => setAccountingForm({ ...accountingForm, type: e.target.value, staffId: ["expense", "income", "transfer"].includes(e.target.value) ? "" : accountingForm.staffId })}>
+                          <option value="expense">General Expense</option>
+                          <option value="salary">Staff Salary</option>
+                          <option value="advance">Staff Advance</option>
+                          <option value="income">Income</option>
+                          <option value="transfer">Account Transfer</option>
                         </select>
                       </div>
-                    )}
-                    {["income", "transfer"].includes(accountingForm.type) && (
-                      <div className="form-group">
-                        <label>{accountingForm.type === "transfer" ? "Transfer To" : "Deposit To (Account)"}</label>
-                        <select value={accountingForm.destinationAccountId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, destinationAccountId: e.target.value })}>
-                          <option value="">-- Select Account --</option>
-                          {(state.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>)}
-                        </select>
-                      </div>
-                    )}
-                    {accountingForm.type === "expense" && (
-                      <>
+                      {["expense", "transfer", "supplier_payment"].includes(accountingForm.type) && (
                         <div className="form-group">
-                          <label>Account Type</label>
-                          <select value={accountingForm.coaType} onChange={(e) => {
-                            const newType = e.target.value;
-                            const newGroup = Object.keys(CHART_OF_ACCOUNTS[newType] || {})[0] || "";
-                            const newSub = (CHART_OF_ACCOUNTS[newType]?.[newGroup] || [])[0] || "";
-                            setAccountingForm({ ...accountingForm, coaType: newType, coaGroup: newGroup, coaSub: newSub });
-                          }}>
-                            {Object.keys(CHART_OF_ACCOUNTS).filter(k => k !== "Payroll & Staff").map(type => (
-                              <option key={type} value={type}>{type}</option>
+                          <label>{accountingForm.type === "transfer" ? "Transfer From" : "Paid From (Account)"}</label>
+                          <select value={accountingForm.sourceAccountId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, sourceAccountId: e.target.value })}>
+                            <option value="">-- Select Account --</option>
+                            {(state.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {["income", "transfer"].includes(accountingForm.type) && (
+                        <div className="form-group">
+                          <label>{accountingForm.type === "transfer" ? "Transfer To" : "Deposit To (Account)"}</label>
+                          <select value={accountingForm.destinationAccountId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, destinationAccountId: e.target.value })}>
+                            <option value="">-- Select Account --</option>
+                            {(state.accounts || []).map(acc => <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>)}
+                          </select>
+                        </div>
+                      )}
+                      {accountingForm.type === "expense" && (
+                        <>
+                          <div className="form-group">
+                            <label>Account Type</label>
+                            <select value={accountingForm.coaType} onChange={(e) => {
+                              const newType = e.target.value;
+                              const newGroup = Object.keys(CHART_OF_ACCOUNTS[newType] || {})[0] || "";
+                              const newSub = (CHART_OF_ACCOUNTS[newType]?.[newGroup] || [])[0] || "";
+                              setAccountingForm({ ...accountingForm, coaType: newType, coaGroup: newGroup, coaSub: newSub });
+                            }}>
+                              {Object.keys(CHART_OF_ACCOUNTS).filter(k => k !== "Payroll & Staff").map(type => (
+                                <option key={type} value={type}>{type}</option>
+                              ))}
+                            </select>
+                          </div>
+                          {accountingForm.coaType && CHART_OF_ACCOUNTS[accountingForm.coaType] && (
+                            <div className="form-group">
+                              <label>Account Group</label>
+                              <select value={accountingForm.coaGroup} onChange={(e) => {
+                                const newGroup = e.target.value;
+                                const newSub = (CHART_OF_ACCOUNTS[accountingForm.coaType]?.[newGroup] || [])[0] || "";
+                                setAccountingForm({ ...accountingForm, coaGroup: newGroup, coaSub: newSub });
+                              }}>
+                                {Object.keys(CHART_OF_ACCOUNTS[accountingForm.coaType]).map(group => (
+                                  <option key={group} value={group}>{group}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {accountingForm.coaType && accountingForm.coaGroup && CHART_OF_ACCOUNTS[accountingForm.coaType]?.[accountingForm.coaGroup] && (
+                            <div className="form-group">
+                              <label>Sub-Account</label>
+                              <select value={accountingForm.coaSub} onChange={(e) => setAccountingForm({ ...accountingForm, coaSub: e.target.value })}>
+                                {CHART_OF_ACCOUNTS[accountingForm.coaType][accountingForm.coaGroup].map(sub => (
+                                  <option key={sub} value={sub}>{sub}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="form-group">
+                        <label>Amount (LKR)</label>
+                        <input type="number" min="0" step="0.01" value={accountingForm.amount} onChange={(e) => setAccountingForm({ ...accountingForm, amount: e.target.value })} />
+                      </div>
+                      {["salary", "advance"].includes(accountingForm.type) ? (
+                        <div className="form-group">
+                          <label>Staff Member</label>
+                          <select value={accountingForm.staffId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, staffId: e.target.value })}>
+                            <option value="">-- Select Staff --</option>
+                            {(state.staff || []).map((s) => (
+                              <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
                             ))}
                           </select>
                         </div>
-                        {accountingForm.coaType && CHART_OF_ACCOUNTS[accountingForm.coaType] && (
-                          <div className="form-group">
-                            <label>Account Group</label>
-                            <select value={accountingForm.coaGroup} onChange={(e) => {
-                              const newGroup = e.target.value;
-                              const newSub = (CHART_OF_ACCOUNTS[accountingForm.coaType]?.[newGroup] || [])[0] || "";
-                              setAccountingForm({ ...accountingForm, coaGroup: newGroup, coaSub: newSub });
-                            }}>
-                              {Object.keys(CHART_OF_ACCOUNTS[accountingForm.coaType]).map(group => (
-                                <option key={group} value={group}>{group}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                        {accountingForm.coaType && accountingForm.coaGroup && CHART_OF_ACCOUNTS[accountingForm.coaType]?.[accountingForm.coaGroup] && (
-                          <div className="form-group">
-                            <label>Sub-Account</label>
-                            <select value={accountingForm.coaSub} onChange={(e) => setAccountingForm({ ...accountingForm, coaSub: e.target.value })}>
-                              {CHART_OF_ACCOUNTS[accountingForm.coaType][accountingForm.coaGroup].map(sub => (
-                                <option key={sub} value={sub}>{sub}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div className="form-group">
-                      <label>Amount (LKR)</label>
-                      <input type="number" min="0" step="0.01" value={accountingForm.amount} onChange={(e) => setAccountingForm({ ...accountingForm, amount: e.target.value })} />
-                    </div>
-                    {["salary", "advance"].includes(accountingForm.type) ? (
+                      ) : null}
                       <div className="form-group">
-                        <label>Staff Member</label>
-                        <select value={accountingForm.staffId || ""} onChange={(e) => setAccountingForm({ ...accountingForm, staffId: e.target.value })}>
-                          <option value="">-- Select Staff --</option>
-                          {(state.staff || []).map((s) => (
-                            <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
-                          ))}
-                        </select>
+                        <label>Date</label>
+                        <input type="date" value={accountingForm.date} onChange={(e) => setAccountingForm({ ...accountingForm, date: e.target.value })} />
                       </div>
-                    ) : null}
-                    <div className="form-group">
-                      <label>Date</label>
-                      <input type="date" value={accountingForm.date} onChange={(e) => setAccountingForm({ ...accountingForm, date: e.target.value })} />
+                      <div className="form-group">
+                        <label>Description (Optional)</label>
+                        <textarea value={accountingForm.description} onChange={(e) => setAccountingForm({ ...accountingForm, description: e.target.value })} />
+                      </div>
                     </div>
-                    <div className="form-group">
-                      <label>Description (Optional)</label>
-                      <textarea value={accountingForm.description} onChange={(e) => setAccountingForm({ ...accountingForm, description: e.target.value })} />
-                    </div>
-                    <div className="form-actions">
+                    <div className="premium-modal-footer">
                       <button type="button" className="ghost" onClick={() => setShowAccountingForm(false)}>Cancel</button>
                       <button type="button" className="primary" onClick={saveAccountingEntry}>Save Record</button>
                     </div>
@@ -7436,39 +7435,37 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
 
               {showPayrollModal ? (
                 <div className="low-stock-modal" onClick={() => setShowPayrollModal(false)}>
-                  <div className="low-stock-modal-card payroll-modal" onClick={(e) => e.stopPropagation()}>
-                    <h3>Run Payroll</h3>
-                    <div className="form-group">
-                      <label>Payroll Month</label>
-                      <input type="month" value={payrollMonth} onChange={(e) => setPayrollMonth(e.target.value)} />
+                  <div className="premium-modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(650px, 100%)" }}>
+                    <div className="premium-modal-header">
+                      <h3>Run Payroll</h3>
+                      <button type="button" onClick={() => setShowPayrollModal(false)}>Close</button>
                     </div>
-                    
-                    <div className="admin-table payroll-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Staff Name</th>
-                            <th className="number-cell">Base Salary</th>
-                            <th className="number-cell">Advances</th>
-                            <th className="number-cell">Net Pay</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {payrollPreview.length > 0 ? payrollPreview.map(p => (
-                            <tr key={p.staffId}>
-                              <td>{p.name}</td>
-                              <td className="number-cell">{formatLkrValue(p.baseSalary)}</td>
-                              <td className="number-cell danger-text">-{formatLkrValue(p.totalAdvance)}</td>
-                              <td className="number-cell"><b>{formatLkrValue(p.netPay)}</b></td>
-                            </tr>
-                          )) : (
-                            <tr><td colSpan="4" style={{ textAlign: "center", padding: "20px" }}>No staff configured with a monthly salary.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div className="premium-modal-body">
+                      <div className="form-group">
+                        <label>Payroll Month</label>
+                        <input type="month" value={payrollMonth} onChange={(e) => setPayrollMonth(e.target.value)} />
+                      </div>
+                      
+                      <div className="admin-table payroll-table">
+                        <header style={{ gridTemplateColumns: "1.5fr 1fr 1fr 1fr" }}>
+                          <span>Staff Name</span>
+                          <span className="number-cell">Base Salary</span>
+                          <span className="number-cell">Advances</span>
+                          <span className="number-cell">Net Pay</span>
+                        </header>
+                        {payrollPreview.length > 0 ? payrollPreview.map(p => (
+                          <article key={p.staffId} style={{ gridTemplateColumns: "1.5fr 1fr 1fr 1fr" }}>
+                            <span>{p.name}</span>
+                            <span className="number-cell">{formatLkrValue(p.baseSalary)}</span>
+                            <span className="number-cell danger-text">-{formatLkrValue(p.totalAdvance)}</span>
+                            <span className="number-cell" style={{ fontWeight: 800 }}>{formatLkrValue(p.netPay)}</span>
+                          </article>
+                        )) : (
+                          <div style={{ textAlign: "center", padding: "20px", color: "#666" }}>No staff configured with a monthly salary.</div>
+                        )}
+                      </div>
                     </div>
-                    
-                    <div className="form-actions">
+                    <div className="premium-modal-footer">
                       <button type="button" className="ghost" onClick={() => setShowPayrollModal(false)}>Cancel</button>
                       <button type="button" className="primary" onClick={confirmPayroll} disabled={!payrollPreview.length}>Confirm & Log Payroll</button>
                     </div>
@@ -7477,49 +7474,48 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               ) : null}
 
               {showAccountsModal ? (
-                <div className="modal-overlay">
-                  <div className="modal-content admin-modal">
-                    <h3>Manage Accounts</h3>
-                    <div className="admin-inline-form" style={{ marginBottom: "16px" }}>
-                      <input value={accountForm.name} onChange={e => setAccountForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Account Name (e.g. Petty Cash)" />
-                      <select value={accountForm.type} onChange={e => setAccountForm(prev => ({ ...prev, type: e.target.value }))}>
-                        <option value="cash">Cash / Till</option>
-                        <option value="bank">Bank Account</option>
-                      </select>
-                      <input type="number" step="0.01" value={accountForm.initialBalance} onChange={e => setAccountForm(prev => ({ ...prev, initialBalance: e.target.value }))} placeholder="Initial Balance" />
-                      <button type="button" onClick={saveAccount}>{accountForm.id ? "Update Account" : "Add Account"}</button>
-                      {accountForm.id && <button type="button" className="ghost" onClick={() => setAccountForm({ id: "", name: "", type: "bank", initialBalance: "" })}>Cancel Edit</button>}
+                <div className="low-stock-modal" onClick={() => setShowAccountsModal(false)}>
+                  <div className="premium-modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(700px, 100%)" }}>
+                    <div className="premium-modal-header">
+                      <h3>Manage Accounts</h3>
+                      <button type="button" onClick={() => setShowAccountsModal(false)}>Close</button>
                     </div>
-                    <div className="admin-table">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th>Account Name</th>
-                            <th>Type</th>
-                            <th className="number-cell">Initial Balance</th>
-                            <th className="number-cell">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(state.accounts || []).map(acc => (
-                            <tr key={acc.id}>
-                              <td>{acc.name}</td>
-                              <td style={{textTransform:"capitalize"}}>{acc.type}</td>
-                              <td className="number-cell">{formatLkrValue(acc.initialBalance)}</td>
-                              <td className="number-cell">
-                                <button type="button" className="ghost" style={{padding:"2px 8px", marginRight:"4px"}} onClick={() => setAccountForm({ id: acc.id, name: acc.name, type: acc.type, initialBalance: acc.initialBalance })}>Edit</button>
-                                <button type="button" className="danger-btn" style={{padding:"2px 8px"}} onClick={() => deleteAccountHandler(acc.id)}>Delete</button>
-                              </td>
-                            </tr>
-                          ))}
-                          {(!state.accounts || state.accounts.length === 0) && (
-                            <tr><td colSpan="4" style={{textAlign:"center", color:"#888"}}>No accounts created yet.</td></tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="form-actions" style={{ marginTop: "16px" }}>
-                      <button type="button" className="ghost" onClick={() => setShowAccountsModal(false)}>Close</button>
+                    <div className="premium-modal-body">
+                      <div className="admin-inline-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: "8px", alignItems: "center" }}>
+                        <input value={accountForm.name} onChange={e => setAccountForm(prev => ({ ...prev, name: e.target.value }))} placeholder="Account Name" />
+                        <select value={accountForm.type} onChange={e => setAccountForm(prev => ({ ...prev, type: e.target.value }))}>
+                          <option value="cash">Cash / Till</option>
+                          <option value="bank">Bank Account</option>
+                        </select>
+                        <input type="number" step="0.01" value={accountForm.initialBalance} onChange={e => setAccountForm(prev => ({ ...prev, initialBalance: e.target.value }))} placeholder="Initial Balance" />
+                        <div style={{ display: "flex", gap: "4px" }}>
+                          <button type="button" onClick={saveAccount} style={{ padding: "8px 12px", background: "#1e88e5", color: "white", borderRadius: "8px", border: "none" }}>{accountForm.id ? "Update" : "Add"}</button>
+                          {accountForm.id && <button type="button" onClick={() => setAccountForm({ id: "", name: "", type: "bank", initialBalance: "" })} style={{ padding: "8px 12px", background: "#f5f5f5", color: "#333", borderRadius: "8px", border: "1px solid #ddd" }}>Cancel</button>}
+                        </div>
+                      </div>
+                      <div className="admin-table">
+                        <header style={{ gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr" }}>
+                          <span>Account Name</span>
+                          <span>Type</span>
+                          <span className="number-cell">Initial Balance</span>
+                          <span className="number-cell">Actions</span>
+                        </header>
+                        {(state.accounts || []).length > 0 ? (state.accounts || []).map(acc => (
+                          <article key={acc.id} style={{ gridTemplateColumns: "1.5fr 1fr 1.5fr 1fr" }}>
+                            <span>{acc.name}</span>
+                            <span style={{textTransform:"capitalize"}}>{acc.type}</span>
+                            <span className="number-cell" style={{ fontWeight: 600 }}>{formatLkrValue(acc.initialBalance)}</span>
+                            <span className="number-cell">
+                              <div className="table-actions" style={{ justifyContent: "flex-end" }}>
+                                <button type="button" className="ghost" onClick={() => setAccountForm({ id: acc.id, name: acc.name, type: acc.type, initialBalance: acc.initialBalance })}>Edit</button>
+                                <button type="button" className="danger-btn" onClick={() => deleteAccountHandler(acc.id)}>Delete</button>
+                              </div>
+                            </span>
+                          </article>
+                        )) : (
+                          <div style={{textAlign:"center", color:"#888", padding: "20px"}}>No accounts created yet.</div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
