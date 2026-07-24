@@ -6654,52 +6654,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               </span>
             </button>
           ))}
-          <section className="sidebar-bundle-guide" aria-label="Bundle counting guide">
-            <div className="sidebar-bundle-guide-head">
-              <span className="sidebar-bundle-guide-kicker">Bundle Logic</span>
-              <strong>How Bundles Are Counted</strong>
-            </div>
-            <p className="sidebar-bundle-guide-note">
-              The app converts units into bundles by bottle size. Anything left after full bundles is counted as singles.
-            </p>
-            <div className="sidebar-bundle-guide-grid">
-              <article>
-                <span>200 ml</span>
-                <strong>24 per bundle</strong>
-              </article>
-              <article>
-                <span>250 ml</span>
-                <strong>30 per bundle</strong>
-              </article>
-              <article>
-                <span>300 ml</span>
-                <strong>24 per bundle</strong>
-              </article>
-              <article>
-                <span>400 ml</span>
-                <strong>24 per bundle</strong>
-              </article>
-              <article>
-                <span>500 ml</span>
-                <strong>24 per bundle</strong>
-              </article>
-              <article>
-                <span>1000 ml</span>
-                <strong>12 per bundle</strong>
-              </article>
-              <article>
-                <span>1500 ml</span>
-                <strong>12 per bundle</strong>
-              </article>
-              <article>
-                <span>2000 ml</span>
-                <strong>9 per bundle</strong>
-              </article>
-            </div>
-            <p className="sidebar-bundle-guide-foot">
-              Water rule: <strong>1000 ml = 15</strong>, <strong>1500 ml = 12</strong>, <strong>500 ml = 24</strong>.
-            </p>
-          </section>
+
           <div className="side-menu-footer">
             <a href="https://www.jnco.tech" target="_blank" rel="noreferrer">
               <img src="/powered.png" alt="Powered by" />
