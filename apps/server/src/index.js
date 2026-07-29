@@ -771,7 +771,7 @@ app.get("/customers", requireAuth, requireRole("admin"), (_req, res) => {
   res.json(getState().customers || []);
 });
 
-app.post("/customers", requireAuth, requireRole("admin", "manager"), (req, res) => {
+app.post("/customers", requireAuth, requireRole("admin", "manager", "cashier"), (req, res) => {
   const body = req.body || {};
   const name = String(body.name || "").trim();
   const phone = String(body.phone || "").trim();
@@ -797,6 +797,11 @@ app.post("/customers", requireAuth, requireRole("admin", "manager"), (req, res) 
   const outstandingAdjustment = Number.isFinite(rawOutstandingAdjustment) && rawOutstandingAdjustment > 0
     ? roundMoney(rawOutstandingAdjustment)
     : 0;
+  const rawOpeningEmptyBottles = Number(body.openingEmptyBottles || 0);
+  const openingEmptyBottles = Number.isFinite(rawOpeningEmptyBottles) && rawOpeningEmptyBottles > 0
+    ? Math.floor(rawOpeningEmptyBottles)
+    : 0;
+
   if (!name) {
     res.status(400).json({ message: "Customer name is required" });
     return;
@@ -816,6 +821,8 @@ app.post("/customers", requireAuth, requireRole("admin", "manager"), (req, res) 
     bundleDiscountLimit: canManageCustomerLimits ? bundleDiscountLimit : 0,
     outstandingAdjustment: canManageOutstandingAdjustment ? outstandingAdjustment : 0,
     outstandingAdjustmentReason: canManageOutstandingAdjustment ? outstandingAdjustmentReason : "",
+    openingEmptyBottles,
+    collectedOpeningEmptyBottles: 0,
     createdAt: new Date().toISOString()
   };
 
@@ -848,6 +855,13 @@ app.patch("/customers/:id", requireAuth, requireRole("admin", "cashier", "manage
   const rawBundleDiscountLimit = Number(body.bundleDiscountLimit || 0);
   const rawOutstandingAdjustment = Number(body.outstandingAdjustment || 0);
   const outstandingAdjustmentReason = String(body.outstandingAdjustmentReason || "").trim().slice(0, 240);
+  
+  const hasOpeningEmptyBottles = Object.prototype.hasOwnProperty.call(body, "openingEmptyBottles");
+  const rawOpeningEmptyBottles = Number(body.openingEmptyBottles || 0);
+  const openingEmptyBottles = Number.isFinite(rawOpeningEmptyBottles) && rawOpeningEmptyBottles > 0
+    ? Math.floor(rawOpeningEmptyBottles)
+    : 0;
+
   const openingOutstanding = Number.isFinite(rawOpeningOutstanding) && rawOpeningOutstanding > 0
     ? roundMoney(rawOpeningOutstanding)
     : 0;
@@ -875,7 +889,8 @@ app.patch("/customers/:id", requireAuth, requireRole("admin", "cashier", "manage
     if (req.user?.role === "cashier") {
       state.customers[idx] = {
         ...state.customers[idx],
-        phone: String(body.phone || "").trim()
+        phone: body.phone !== undefined ? String(body.phone || "").trim() : state.customers[idx].phone,
+        ...(hasOpeningEmptyBottles ? { openingEmptyBottles } : {})
       };
     } else if (req.user?.role === "manager") {
       state.customers[idx] = {
@@ -897,7 +912,8 @@ app.patch("/customers/:id", requireAuth, requireRole("admin", "cashier", "manage
         ...(hasDiscountLimit ? { discountLimit } : {}),
         ...(hasBundleDiscountLimit ? { bundleDiscountLimit } : {}),
         ...(hasOutstandingAdjustment ? { outstandingAdjustment } : {}),
-        ...(hasOutstandingAdjustmentReason ? { outstandingAdjustmentReason } : {})
+        ...(hasOutstandingAdjustmentReason ? { outstandingAdjustmentReason } : {}),
+        ...(hasOpeningEmptyBottles ? { openingEmptyBottles } : {})
       };
     }
     return state;
@@ -910,6 +926,56 @@ app.patch("/customers/:id", requireAuth, requireRole("admin", "cashier", "manage
   }
 
   sendFullSync();
+  res.json(updated);
+});
+
+app.post("/customers/:id/collect-opening-empty-bottles", requireAuth, requireRole("cashier", "admin", "manager"), (req, res) => {
+  const { id } = req.params;
+  const body = req.body || {};
+  const quantity = Number(body.quantity);
+  
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    res.status(400).json({ message: "quantity must be greater than 0" });
+    return;
+  }
+
+  const state = getState();
+  const customer = (state.customers || []).find((item) => item.id === id);
+  if (!customer) {
+    res.status(404).json({ message: "Customer not found" });
+    return;
+  }
+
+  const openingEmptyBottles = Number(customer.openingEmptyBottles || 0);
+  const alreadyCollected = Number(customer.collectedOpeningEmptyBottles || 0);
+  
+  if (quantity > (openingEmptyBottles - alreadyCollected)) {
+    res.status(400).json({ message: "Cannot collect more than the remaining opening empty bottles" });
+    return;
+  }
+
+  const next = updateState((draft) => {
+    draft.customers = draft.customers || [];
+    const idx = draft.customers.findIndex((item) => item.id === id);
+    if (idx !== -1) {
+      draft.customers[idx].collectedOpeningEmptyBottles = Math.floor(alreadyCollected + quantity);
+    }
+    
+    // Log the collection event
+    draft.emptyBottleCollections = draft.emptyBottleCollections || [];
+    draft.emptyBottleCollections.unshift({
+      id: nanoid(12),
+      customerId: id,
+      quantity,
+      cashier: req.user?.username || "",
+      isOpeningEmptyBottles: true,
+      createdAt: new Date().toISOString()
+    });
+    return draft;
+  });
+
+  sendFullSync();
+  const updated = (next.customers || []).find((item) => item.id === id);
   res.json(updated);
 });
 

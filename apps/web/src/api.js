@@ -158,6 +158,12 @@ export const collectEmptyBottles = (id, payload) =>
     body: JSON.stringify(payload)
   });
 
+export const collectOpeningEmptyBottles = (customerId, payload) =>
+  request(`/customers/${customerId}/collect-opening-empty-bottles`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+
 export const submitReturn = (payload) =>
   request("/returns", {
     method: "POST",

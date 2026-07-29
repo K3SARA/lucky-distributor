@@ -4,6 +4,7 @@ import { calculateTotals, PAYMENT_TYPES, SOCKET_EVENTS } from "@lucky/shared";
 import {
   clearAuthSession,
   collectEmptyBottles,
+  collectOpeningEmptyBottles,
   confirmPreorder,
   createAuthUser,
   fetchAuthUsers,
@@ -637,6 +638,7 @@ const openSaleReceiptPrint = ({
     const bundles = bundleSize ? Math.floor(qty / bundleSize) : 0;
     const singles = bundleSize ? qty % bundleSize : qty;
     return {
+      name: line?.name || product?.name || "",
       sku,
       qty,
       billingPrice,
@@ -686,7 +688,7 @@ const openSaleReceiptPrint = ({
       const notesHtml = extraNotes.length > 0 ? `<div class="return-print-note">${extraNotes.join(' | ')}</div>` : "";
       const qtyStr = line.bundleSize > 0 ? `${line.bundles}B ${line.singles}S` : `${line.singles}`;
 
-      return `<tr><td colspan="4" class="item-name">${escapeHtml(line.sku)} ${notesHtml}</td></tr>
+      return `<tr><td colspan="4" class="item-name">${escapeHtml(line.name || line.sku)} ${notesHtml}</td></tr>
 <tr><td class="c">${qtyStr}</td><td class="r">${toMoney(line.billingPrice)}</td><td class="r">${line.itemDiscount > 0 ? toMoney(line.itemDiscount) : "-"}</td><td class="r">${toMoney(line.total)}</td></tr>`;
     })
     .join("");
@@ -739,6 +741,7 @@ body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-
 .logo { max-width: 95px; height: auto; flex-shrink: 0; }
 .brand-title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.15; }
 .brand-sub { font-size: 12.5px; margin-bottom: 8px; font-weight: 600; }
+.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
 .meta { margin-top: 10px; font-size: 14px; line-height: 1.5; border-top: 1px dashed #111; border-bottom: 1px dashed #111; padding: 6px 0; }
 table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
 th, td { padding: 4px 2px; text-align: left; }
@@ -761,7 +764,7 @@ th { font-size: 11.5px; text-transform: uppercase; border-bottom: 1px solid #111
 .sign-label { font-size: 12px; font-weight: 600; }
 .powered { text-align: center; font-size: 11px; margin-top: 24px; color: #444; }
 </style></head><body><div class="sheet">
-<div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">LUCKY LANKA DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Polonnaruwa. Tel : +94 74 014 2898, +94 27 205 4887</div></div></div>
+<div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">LUCKY LANKA DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Polonnaruwa. Tel : +94 74 014 2898, +94 27 205 4887</div><div class="tag">Original bill</div></div></div>
 <div class="meta">
 Customer: ${escapeHtml(pickedCustomer)}<br/>
 Date: ${escapeHtml(dateLabel)}<br/>
@@ -771,7 +774,7 @@ Rep: ${escapeHtml(sale?.cashier || "-")}<br/>
 Invoice No: <strong>${escapeHtml(sale?.id || "-")}</strong><br/>
 Lorry: ${escapeHtml(sale?.lorry || "-")}
 </div>
-<table><thead><tr><th colspan="4">Item Code</th></tr><tr><th class="c">Qty</th><th class="r">Price</th><th class="r">Disc</th><th class="r">Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+<table><thead><tr><th colspan="4">Item Name</th></tr><tr><th class="c">Qty</th><th class="r">Price</th><th class="r">Disc</th><th class="r">Total</th></tr></thead><tbody>${rowsHtml}</tbody></table>
 ${bundleGuideText ? `<div class="bundle-guide-line"><b>Bundle Count:</b> ${escapeHtml(bundleGuideText)}</div>` : ""}
 ${emptySummaryHtml}
 <div class="totals-grid">
@@ -989,6 +992,46 @@ const CashierView = ({
   savingCheckout,
   checkout
 }) => {
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerPhone, setNewCustomerPhone] = useState("");
+  const [newCustomerAddress, setNewCustomerAddress] = useState("");
+  const [newCustomerRoute, setNewCustomerRoute] = useState("");
+  const [newCustomerOpeningEmptyBottles, setNewCustomerOpeningEmptyBottles] = useState("");
+  const [savingNewCustomer, setSavingNewCustomer] = useState(false);
+
+  const openCustomerAdd = () => {
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setNewCustomerAddress("");
+    setNewCustomerRoute("");
+    setNewCustomerOpeningEmptyBottles("");
+    setShowAddCustomerModal(true);
+  };
+
+  const saveNewCustomer = async () => {
+    if (!newCustomerName.trim()) {
+      alert("Customer name is required.");
+      return;
+    }
+    setSavingNewCustomer(true);
+    try {
+      await createCustomer({ 
+        name: newCustomerName.trim(), 
+        phone: newCustomerPhone.trim(), 
+        address: newCustomerAddress.trim(), 
+        route: newCustomerRoute.trim(),
+        openingEmptyBottles: Number(newCustomerOpeningEmptyBottles) || 0
+      });
+      setShowAddCustomerModal(false);
+      setCustomerName(newCustomerName.trim());
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingNewCustomer(false);
+    }
+  };
+
   const LORRY_CAPACITY = 2880;
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1239,12 +1282,14 @@ const CashierView = ({
   }, [customerName, state.customers]);
   const [customerPhoneDraft, setCustomerPhoneDraft] = useState("");
   const [customerAddressDraft, setCustomerAddressDraft] = useState("");
+  const [customerOpeningEmptyBottlesDraft, setCustomerOpeningEmptyBottlesDraft] = useState("");
   const [savingCustomerDetails, setSavingCustomerDetails] = useState(false);
 
   useEffect(() => {
     setCustomerPhoneDraft(String(selectedSavedCustomer?.phone || ""));
     setCustomerAddressDraft(String(selectedSavedCustomer?.address || ""));
-  }, [selectedSavedCustomer?.id, selectedSavedCustomer?.phone, selectedSavedCustomer?.address]);
+    setCustomerOpeningEmptyBottlesDraft(selectedSavedCustomer?.openingEmptyBottles > 0 ? String(selectedSavedCustomer.openingEmptyBottles) : "");
+  }, [selectedSavedCustomer?.id, selectedSavedCustomer?.phone, selectedSavedCustomer?.address, selectedSavedCustomer?.openingEmptyBottles]);
 
   const triggerAddHaptic = () => {
     const now = Date.now();
@@ -1349,6 +1394,22 @@ const CashierView = ({
       return { ...line, itemDiscountMode: nextMode, itemDiscount: clamped };
     }));
   };
+
+  const updateItemCustomPrice = (productId, value) => {
+    setCart((current) => current.map((line) => {
+      if (line.productId !== productId) return line;
+      if (value === "") {
+        const product = state?.products?.find(p => p.id === productId);
+        const defaultPrice = productSalePrice(product);
+        return { ...line, priceDraft: "", price: defaultPrice, basePrice: defaultPrice };
+      }
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        return { ...line, priceDraft: value, price: parsed, basePrice: parsed };
+      }
+      return { ...line, priceDraft: value };
+    }));
+  };
   const [showCustomerPicker, setShowCustomerPicker] = useState(false);
   const [showCartPopup, setShowCartPopup] = useState(false);
   const [showItemSizePicker, setShowItemSizePicker] = useState(false);
@@ -1381,6 +1442,8 @@ const CashierView = ({
   const [emptyBottleQtyDraft, setEmptyBottleQtyDraft] = useState("");
   const [emptyBottleError, setEmptyBottleError] = useState("");
   const [savingEmptyBottleCollect, setSavingEmptyBottleCollect] = useState(false);
+  const [openingEmptyBottleQtyDraft, setOpeningEmptyBottleQtyDraft] = useState("");
+  const [savingOpeningEmptyBottleCollect, setSavingOpeningEmptyBottleCollect] = useState(false);
   const lastHapticAtRef = useRef(0);
   const [mobileCashierNavOpen, setMobileCashierNavOpen] = useState(false);
   const [repBillingStep, setRepBillingStep] = useState("customer");
@@ -1639,6 +1702,37 @@ const CashierView = ({
     Number(emptyBottleSale?.emptyBottlesOwed || 0) - Number(emptyBottleSale?.emptyBottlesCollected || 0)
   );
 
+  const emptyBottleSelectedCustomer = useMemo(() => {
+    return state.customers?.find(c => c.name === emptyBottleCustomerName) || null;
+  }, [emptyBottleCustomerName, state.customers]);
+
+  const submitOpeningEmptyBottleCollect = async () => {
+    if (!emptyBottleSelectedCustomer) return;
+    const qty = Number(openingEmptyBottleQtyDraft);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setEmptyBottleError("Enter a valid quantity.");
+      return;
+    }
+    const owed = Number(emptyBottleSelectedCustomer.openingEmptyBottles || 0);
+    const collected = Number(emptyBottleSelectedCustomer.collectedOpeningEmptyBottles || 0);
+    const outstanding = owed - collected;
+    if (qty > outstanding) {
+      setEmptyBottleError("Cannot collect more than the opening empty bottles owed.");
+      return;
+    }
+    try {
+      setSavingOpeningEmptyBottleCollect(true);
+      await collectOpeningEmptyBottles(emptyBottleSelectedCustomer.id, { quantity: qty });
+      setOpeningEmptyBottleQtyDraft("");
+      setEmptyBottleError("");
+      setMessage("Opening empty bottles collected successfully.");
+    } catch (err) {
+      setEmptyBottleError(err.message || "Unable to collect opening empty bottles.");
+    } finally {
+      setSavingOpeningEmptyBottleCollect(false);
+    }
+  };
+
   const submitEmptyBottleCollect = async () => {
     try {
       const saleId = String(emptyBottleSaleId || "").trim();
@@ -1893,7 +1987,8 @@ const CashierView = ({
       await updateCustomer(selectedSavedCustomer.id, {
         name: selectedSavedCustomer.name || customerName.trim(),
         phone: customerPhoneDraft.trim(),
-        address: customerAddressDraft.trim()
+        address: customerAddressDraft.trim(),
+        openingEmptyBottles: Number(customerOpeningEmptyBottlesDraft) || 0
       });
       setMessage("Customer details updated.");
     } catch (error) {
@@ -2093,6 +2188,20 @@ const CashierView = ({
                             {selectedCustomerBundleDiscountLimit > 0 ? <p>Bundle Limit: {currency(selectedCustomerBundleDiscountLimit)} per bundle</p> : null}
                             {selectedSavedCustomer?.phone ? <p>Phone: {selectedSavedCustomer.phone}</p> : null}
                             
+                            <label className="form-hint" style={{ marginTop: '12px' }}>Opening Empty Bottles (Setup)</label>
+                            <div className="checkout-inline-action" style={{ marginBottom: '12px' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                value={customerOpeningEmptyBottlesDraft}
+                                onChange={(e) => setCustomerOpeningEmptyBottlesDraft(e.target.value)}
+                                placeholder="Initial empty bottles owed"
+                              />
+                              <button type="button" className="ghost" onClick={saveBillingCustomerDetails} disabled={savingCustomerDetails}>
+                                {savingCustomerDetails ? "Saving..." : "Set"}
+                              </button>
+                            </div>
+                            
                             {(!selectedSavedCustomer.phone || !selectedSavedCustomer.address) && (
                               <div className="rep-incomplete-warning-card">
                                 <p className="rep-incomplete-warning-title">
@@ -2210,7 +2319,20 @@ const CashierView = ({
                           </div>
                           <div className="mc-item-row2">
                             <span className="mc-price-pill">{currency(lineFinalPrice(line))}</span>
-                            <span className="mc-base-price">{currency(lineBasePrice(line))} each</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }} onClick={(e) => e.stopPropagation()}>
+                              <span>Rs.</span>
+                              <input
+                                type="number"
+                                className="mc-price-input"
+                                style={{ width: '4rem', padding: '2px 6px', fontSize: '0.85rem', border: '1px solid #93c5fd', borderRadius: '6px', backgroundColor: '#eff6ff', color: '#1e3a8a', fontWeight: '600', outline: 'none' }}
+                                min="0"
+                                step="0.01"
+                                value={line.priceDraft ?? line.price}
+                                onChange={(e) => updateItemCustomPrice(line.productId, e.target.value)}
+                                placeholder="Price"
+                              />
+                              <span>each</span>
+                            </div>
                           </div>
                         </div>
                         <div className="mc-item-disc-row" onClick={(e) => e.stopPropagation()}>
@@ -2834,6 +2956,27 @@ const CashierView = ({
                   ))}
                 </div>
               ) : null}
+              {emptyBottleSelectedCustomer && (Number(emptyBottleSelectedCustomer.openingEmptyBottles || 0) - Number(emptyBottleSelectedCustomer.collectedOpeningEmptyBottles || 0) > 0) ? (
+                <div style={{ marginBottom: "1rem", padding: "1rem", border: "1px solid var(--border)", borderRadius: "8px", background: "var(--card-bg)" }}>
+                  <label className="form-hint" style={{ color: "var(--warning)" }}>
+                    Collect Opening Empty Bottles (Outstanding: {Number(emptyBottleSelectedCustomer.openingEmptyBottles || 0) - Number(emptyBottleSelectedCustomer.collectedOpeningEmptyBottles || 0)})
+                  </label>
+                  <div className="checkout-inline-action" style={{ marginTop: "0.5rem" }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max={Number(emptyBottleSelectedCustomer.openingEmptyBottles || 0) - Number(emptyBottleSelectedCustomer.collectedOpeningEmptyBottles || 0)}
+                      value={openingEmptyBottleQtyDraft}
+                      onChange={(e) => setOpeningEmptyBottleQtyDraft(e.target.value)}
+                      placeholder="Quantity to collect"
+                    />
+                    <button type="button" onClick={submitOpeningEmptyBottleCollect} disabled={savingOpeningEmptyBottleCollect}>
+                      {savingOpeningEmptyBottleCollect ? "Saving..." : "Collect"}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              <label className="form-hint">Collect Bill Empty Bottles</label>
               <select
                 value={emptyBottleSaleId}
                 onChange={(e) => { setEmptyBottleSaleId(e.target.value); setEmptyBottleQtyDraft(""); setEmptyBottleError(""); }}
@@ -3040,9 +3183,18 @@ const CashierView = ({
       {cashierPage === "customers" ? (
         <main className="grid">
           <section className="panel rep-customers-panel">
-            <div className="rep-customers-head">
-              <h2>Saved Customers</h2>
-              <p>Find customer details and outstanding balance quickly.</p>
+            <div className="rep-customers-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2>Saved Customers</h2>
+                <p>Find customer details and outstanding balance quickly.</p>
+              </div>
+              <button type="button" className="customer-add-icon-btn" onClick={openCustomerAdd} title="Add Customer" aria-label="Add Customer" style={{ flexShrink: 0, marginTop: "0.25rem" }}>
+                <span className="fab-plus">+</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M4 20c0-4.5 3.6-8 8-8s8 3.5 8 8" />
+                </svg>
+              </button>
             </div>
             <input
               className="search-icon-input rep-customers-search"
@@ -3255,7 +3407,15 @@ const CashierView = ({
           <div className="low-stock-modal-card rep-fullscreen-sheet" onClick={(e) => e.stopPropagation()}>
             <div className="low-stock-modal-head">
               <h3>Select Customer</h3>
-              <button type="button" className="ghost" onClick={() => setShowCustomerPicker(false)}>Close</button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button type="button" onClick={() => {
+                  setShowCustomerPicker(false);
+                  openCustomerAdd();
+                }}>
+                  + Add
+                </button>
+                <button type="button" className="ghost" onClick={() => setShowCustomerPicker(false)}>Close</button>
+              </div>
             </div>
             <div className="rep-fullscreen-sheet-body">
               <input
@@ -3308,7 +3468,19 @@ const CashierView = ({
                   <article className="list-row rep-cart-step-row" key={`sheet-${line.productId}`}>
                     <div className="cart-line-head">
                       <strong>{line.name}</strong>
-                      <p>{currency(lineBasePrice(line))} each • Item Disc {currency(lineItemDiscount(line))} • Net {currency(lineFinalPrice(line))}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span>Price:</span>
+                        <input
+                          type="number"
+                          style={{ width: '5rem', padding: '2px 6px', fontSize: '0.85rem', border: '1px solid #93c5fd', borderRadius: '6px', backgroundColor: '#eff6ff', color: '#1e3a8a', fontWeight: '600', outline: 'none' }}
+                          min="0"
+                          step="0.01"
+                          value={line.priceDraft ?? line.price}
+                          onChange={(e) => updateItemCustomPrice(line.productId, e.target.value)}
+                          placeholder="Price"
+                        />
+                        <span>each • Item Disc {currency(lineItemDiscount(line))} • Net {currency(lineFinalPrice(line))}</span>
+                      </div>
                     </div>
                     <div className="cart-line-controls">
                       <div className="rep-cart-qty-cluster">
@@ -3473,6 +3645,43 @@ const CashierView = ({
           </div>
         </div>
       ) : null}
+
+      {showAddCustomerModal ? (
+        <div className="low-stock-modal" onClick={() => setShowAddCustomerModal(false)}>
+          <div className="low-stock-modal-card customer-entry-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="low-stock-modal-head">
+              <h3>Add Customer</h3>
+              <button type="button" onClick={() => setShowAddCustomerModal(false)}>Close</button>
+            </div>
+            <div className="admin-inline-form customer-entry-grid">
+              <label className="customer-entry-field">
+                <span>Customer Name</span>
+                <input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} placeholder="Customer name" />
+              </label>
+              <label className="customer-entry-field">
+                <span>Phone</span>
+                <input value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} placeholder="Phone" />
+              </label>
+              <label className="customer-entry-field customer-entry-field-full">
+                <span>Address</span>
+                <textarea value={newCustomerAddress} onChange={(e) => setNewCustomerAddress(e.target.value)} placeholder="Address" />
+              </label>
+              <label className="customer-entry-field">
+                <span>Route</span>
+                <input value={newCustomerRoute} onChange={(e) => setNewCustomerRoute(e.target.value)} placeholder="Route (e.g., North District)" />
+              </label>
+              <label className="customer-entry-field">
+                <span>Opening Empty Bottles</span>
+                <input type="number" min="0" value={newCustomerOpeningEmptyBottles} onChange={(e) => setNewCustomerOpeningEmptyBottles(e.target.value)} placeholder="Initial empty bottles owed" />
+              </label>
+              <div className="customer-entry-actions">
+                <button type="button" onClick={saveNewCustomer} disabled={savingNewCustomer}>{savingNewCustomer ? "Saving..." : "Save Customer"}</button>
+                <button type="button" className="ghost" onClick={() => setShowAddCustomerModal(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -3566,7 +3775,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   const [purchaseForm, setPurchaseForm] = useState({ id: "", supplierId: "", invoiceNo: "", date: "", dueDate: "", totalAmount: "", paidAmount: "", status: "unpaid" });
   const [notice, setNotice] = useState("");
 
-  const [customerForm, setCustomerForm] = useState({ id: "", name: "", phone: "", address: "", route: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
+  const [customerForm, setCustomerForm] = useState({ id: "", name: "", phone: "", address: "", route: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "", openingEmptyBottles: "" });
   const [staffForm, setStaffForm] = useState({ id: "", authUserId: "", name: "", role: "", phone: "", monthlySalary: "", username: "", password: "", authRole: "cashier" });
   const [stockMode, setStockMode] = useState("add");
   const [stockForm, setStockForm] = useState({ productId: "", quantity: "", stock: "", sku: "", invoicePrice: "", billingPrice: "", mrp: "" });
@@ -5597,7 +5806,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
   };
 
   const openCustomerAdd = () => {
-    setCustomerForm({ id: "", name: "", phone: "", address: "", route: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "" });
+    setCustomerForm({ id: "", name: "", phone: "", address: "", route: "", openingOutstanding: "", creditLimit: "", discountLimit: "", bundleDiscountLimit: "", outstandingAdjustment: "", outstandingAdjustmentReason: "", openingEmptyBottles: "" });
     setShowCustomerForm(true);
   };
 
@@ -5618,7 +5827,8 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       discountLimit: first.discountLimit ? String(first.discountLimit) : "",
       bundleDiscountLimit: first.bundleDiscountLimit ? String(first.bundleDiscountLimit) : "",
       outstandingAdjustment: first.outstandingAdjustment ? String(first.outstandingAdjustment) : "",
-      outstandingAdjustmentReason: first.outstandingAdjustmentReason || ""
+      outstandingAdjustmentReason: first.outstandingAdjustmentReason || "",
+      openingEmptyBottles: first.openingEmptyBottles ? String(first.openingEmptyBottles) : ""
     });
     setShowCustomerForm(true);
   };
@@ -5641,7 +5851,8 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       discountLimit: matched.discountLimit ? String(matched.discountLimit) : "",
       bundleDiscountLimit: matched.bundleDiscountLimit ? String(matched.bundleDiscountLimit) : "",
       outstandingAdjustment: matched.outstandingAdjustment ? String(matched.outstandingAdjustment) : "",
-      outstandingAdjustmentReason: matched.outstandingAdjustmentReason || ""
+      outstandingAdjustmentReason: matched.outstandingAdjustmentReason || "",
+      openingEmptyBottles: matched.openingEmptyBottles ? String(matched.openingEmptyBottles) : ""
     });
     setShowCustomerForm(true);
   };
@@ -5661,6 +5872,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     const bundleDiscountLimit = Number(customerForm.bundleDiscountLimit || 0);
     const outstandingAdjustment = Number(customerForm.outstandingAdjustment || 0);
     const outstandingAdjustmentReason = String(customerForm.outstandingAdjustmentReason || "").trim();
+    const openingEmptyBottles = Number(customerForm.openingEmptyBottles || 0);
     if (!Number.isFinite(openingOutstanding) || openingOutstanding < 0) {
       setNotice("Opening outstanding must be 0 or more.");
       return;
@@ -5685,7 +5897,8 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       name: customerForm.name.trim(),
       phone: customerForm.phone,
       address: customerForm.address,
-      route: (customerForm.route || "").trim()
+      route: (customerForm.route || "").trim(),
+      openingEmptyBottles
     };
     if (canManageCustomerOpeningOutstanding) {
       payload.openingOutstanding = Number(openingOutstanding.toFixed(2));
@@ -8779,8 +8992,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <h3>{purchaseForm.id ? "Edit Purchase Invoice" : "Add Purchase Invoice"}</h3>
                   <div className="form-group">
                     <label>Supplier *</label>
-                    <select value={purchaseForm.supplierId} onChange={e => setPurchaseForm(prev => ({ ...prev, supplierId: e.target.value }))}>
-                      <option value="">-- Select Supplier --</option>
+                    <select value={purchaseForm.supplierId} onChange={e => setPurchaseForm(prev => ({ ...prev, supplierId: e.target.value }))}><option value="">-- Select Supplier --</option>
                       {(state.suppliers || []).map(s => <option key={s.id} value={s.id}>{s.name} {s.company ? `(${s.company})` : ""}</option>)}
                     </select>
                   </div>
@@ -8913,6 +9125,10 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               <label className="customer-entry-field">
                 <span>Route</span>
                 <input value={customerForm.route} onChange={(e) => setCustomerForm((c) => ({ ...c, route: e.target.value }))} placeholder="Route (e.g., North District)" />
+              </label>
+              <label className="customer-entry-field">
+                <span>Opening Empty Bottles</span>
+                <input type="number" min="0" value={customerForm.openingEmptyBottles} onChange={(e) => setCustomerForm((c) => ({ ...c, openingEmptyBottles: e.target.value }))} placeholder="Initial empty bottles owed" disabled={!canManageCustomerLimits} />
               </label>
               <div className="customer-entry-actions">
                 <button type="button" onClick={saveCustomer}>Save Customer</button>
@@ -9151,7 +9367,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               <p>{new Date(viewedSale.createdAt).toLocaleString()} • {viewedSale.customerName} • {viewedSale.lorry || "-"} • {viewedSale.cashier || "-"} • {viewedSalePaymentDisplay.label}{viewedSalePaymentDisplay.detail ? ` (${viewedSalePaymentDisplay.detail})` : ""}</p>
               <div className="admin-table receipt-table">
                 <header>
-                  <span>Item Code</span>
+                  <span>Item Name</span>
                   <span>Qty</span>
                   <span>Invoice Price<br />LKR</span>
                   <span>Price<br />LKR</span>
@@ -9177,7 +9393,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   return (
                     <article key={`${viewedSale.id}-${line.productId}`}>
                       <span>
-                        {line.sku || productInfoById.get(line.productId)?.sku || "-"}
+                        {line.name || productInfoById.get(line.productId)?.name || "-"}
                         {notDeliveredQty > 0 ? <small className="sales-return-note">Not Delivered {notDeliveredQty}</small> : null}
                         {Number(returned.qty || 0) > 0 ? <small className="sales-return-note">Returned {returned.qty}</small> : null}
                       </span>
@@ -9604,7 +9820,12 @@ export const App = () => {
 
   const taxRate = 0;
   const effectiveCartLines = useMemo(
-    () => cart.map((line) => ({ ...line, itemDiscount: lineItemDiscount(line), price: lineFinalPrice(line) })),
+    () => cart.map((line) => ({ 
+      ...line, 
+      itemDiscount: lineItemDiscount(line), 
+      price: lineFinalPrice(line),
+      basePrice: lineBasePrice(line)
+    })),
     [cart]
   );
   const discountAmount = useMemo(() => billDiscountValue(discountMode, discountValue, effectiveCartLines), [effectiveCartLines, discountMode, discountValue]);
