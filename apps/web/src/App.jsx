@@ -733,36 +733,36 @@ const openSaleReceiptPrint = ({
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt #${escapeHtml(sale.id)}</title><style>
 @page { size: 80mm auto; margin: 3mm; }
-body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-size: 14px; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #000; font-size: 16px; font-weight: 800; }
 .sheet { width: 100%; }
 .center { text-align: center; }
 .header-block { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
 .header-text { text-align: left; flex: 1; padding-left: 8px; }
 .logo { max-width: 95px; height: auto; flex-shrink: 0; }
-.brand-title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.15; }
-.brand-sub { font-size: 12.5px; margin-bottom: 8px; font-weight: 600; }
-.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
-.meta { margin-top: 10px; font-size: 14px; line-height: 1.5; border-top: 1px dashed #111; border-bottom: 1px dashed #111; padding: 6px 0; }
-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
+.brand-title { font-weight: 900; font-size: 22px; text-transform: uppercase; line-height: 1.15; }
+.brand-sub { font-size: 15px; margin-bottom: 8px; font-weight: 900; }
+.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 2px solid #000; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+.meta { margin-top: 10px; font-size: 17px; line-height: 1.5; border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 6px 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 16px; font-weight: 800; }
 th, td { padding: 4px 2px; text-align: left; }
-th { font-size: 11.5px; text-transform: uppercase; border-bottom: 1px solid #111; }
+th { font-size: 14px; text-transform: uppercase; border-bottom: 2px solid #000; font-weight: 900; }
 .c { text-align: center; } .r { text-align: right; }
-.item-name { font-weight: 700; padding-top: 8px; }
-.return-print-note { font-size: 11.5px; color: #444; font-weight: 600; margin-top: 2px; }
-.empty-summary { border-top: 1px dashed #111; margin-top: 12px; padding-top: 8px; }
-.empty-title { font-size: 12px; text-transform: uppercase; font-weight: 700; margin-bottom: 4px; }
-.totals-grid { border-top: 1px dashed #111; margin-top: 12px; padding-top: 8px; }
-.summary-row { display: flex; justify-content: space-between; font-size: 14px; padding: 3px 0; font-weight: 500; }
-.summary-row.is-deduction { color: #a32020; }
-.summary-total { display: flex; justify-content: space-between; font-size: 17px; font-weight: 900; border-top: 1px solid #111; padding-top: 6px; margin-top: 6px; }
-.payment-line { font-size: 13px; font-weight: 700; text-align: right; margin-top: 6px; }
-.bundle-guide-line { margin-top: 12px; font-size: 12.5px; text-align: center; border: 1px solid #ccc; padding: 6px; font-weight: 600; }
-.notes { margin-top: 14px; font-size: 13px; text-align: center; line-height: 1.45; font-weight: 600; }
+.item-name { font-weight: 900; padding-top: 8px; font-size: 17px; }
+.return-print-note { font-size: 14px; color: #000; font-weight: 800; margin-top: 2px; }
+.empty-summary { border-top: 2px dashed #000; margin-top: 12px; padding-top: 8px; }
+.empty-title { font-size: 15px; text-transform: uppercase; font-weight: 900; margin-bottom: 4px; }
+.totals-grid { border-top: 2px dashed #000; margin-top: 12px; padding-top: 8px; }
+.summary-row { display: flex; justify-content: space-between; font-size: 17px; padding: 3px 0; font-weight: 800; }
+.summary-row.is-deduction { color: #000; }
+.summary-total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 900; border-top: 2px solid #000; padding-top: 6px; margin-top: 6px; }
+.payment-line { font-size: 16px; font-weight: 900; text-align: right; margin-top: 6px; }
+.bundle-guide-line { margin-top: 12px; font-size: 15px; text-align: center; border: 2px solid #000; padding: 6px; font-weight: 900; }
+.notes { margin-top: 14px; font-size: 16px; text-align: center; line-height: 1.45; font-weight: 900; }
 .sign-box { margin-top: 36px; display: flex; justify-content: space-between; }
 .sign-col { width: 45%; text-align: center; }
-.sign-line { border-bottom: 1px dotted #111; height: 20px; margin-bottom: 4px; }
-.sign-label { font-size: 12px; font-weight: 600; }
-.powered { text-align: center; font-size: 11px; margin-top: 24px; color: #444; }
+.sign-line { border-bottom: 2px dotted #000; height: 20px; margin-bottom: 4px; }
+.sign-label { font-size: 15px; font-weight: 900; }
+.powered { text-align: center; font-size: 13px; margin-top: 24px; color: #000; font-weight: 800; }
 </style></head><body><div class="sheet">
 <div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">LUCKY LANKA DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Polonnaruwa. Tel : +94 74 014 2898, +94 27 205 4887</div><div class="tag">Original bill</div></div></div>
 <div class="meta">
@@ -831,21 +831,21 @@ const openPreOrderReceiptPrint = ({
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Pre-Order #${escapeHtml(sale.id)}</title><style>
 @page { size: 80mm auto; margin: 3mm; }
-body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #111; font-size: 14px; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #000; font-size: 16px; font-weight: 800; }
 .sheet { width: 100%; }
 .center { text-align: center; }
-.title { font-weight: 900; font-size: 18px; text-transform: uppercase; line-height: 1.15; }
-.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 1px solid #111; border-radius: 999px; font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
-.meta { margin-top: 10px; font-size: 14px; line-height: 1.5; border-top: 1px dashed #111; border-bottom: 1px dashed #111; padding: 6px 0; }
-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
-th, td { border-bottom: 1px solid #ccc; padding: 4px 2px; text-align: left; }
-th { font-size: 11.5px; text-transform: uppercase; }
+.title { font-weight: 900; font-size: 22px; text-transform: uppercase; line-height: 1.15; }
+.tag { display: inline-block; margin-top: 4px; padding: 2px 10px; border: 2px solid #000; border-radius: 999px; font-weight: 900; font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; }
+.meta { margin-top: 10px; font-size: 17px; line-height: 1.5; border-top: 2px dashed #000; border-bottom: 2px dashed #000; padding: 6px 0; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 16px; font-weight: 800; }
+th, td { border-bottom: 2px solid #000; padding: 4px 2px; text-align: left; }
+th { font-size: 14px; text-transform: uppercase; font-weight: 900; }
 .c { text-align: center; } .r { text-align: right; }
-.total-row { margin-top: 12px; display: flex; justify-content: space-between; font-weight: 900; font-size: 17px; border-top: 1px solid #111; padding-top: 6px; }
-.note { margin-top: 14px; font-size: 13px; line-height: 1.45; font-weight: 600; text-align: center; }
+.total-row { margin-top: 12px; display: flex; justify-content: space-between; font-weight: 900; font-size: 20px; border-top: 2px solid #000; padding-top: 6px; }
+.note { margin-top: 14px; font-size: 16px; line-height: 1.45; font-weight: 900; text-align: center; }
 .sign-box { margin-top: 36px; }
-.sign-line { border-bottom: 1px dotted #111; height: 30px; }
-.sign-label { margin-top: 4px; font-size: 12px; text-align: center; font-weight: 600; }
+.sign-line { border-bottom: 2px dotted #000; height: 30px; }
+.sign-label { margin-top: 4px; font-size: 15px; text-align: center; font-weight: 900; }
 </style></head><body><div class="sheet">
 <div class="center"><div class="title">Lucky Distributor</div><div class="tag">Pre-Order</div></div>
 <div class="meta">
