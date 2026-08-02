@@ -3106,6 +3106,36 @@ const CashierView = ({
                     <div className="sales-row-actions">
                       <button
                         type="button"
+                        onClick={() => {
+                          const returnByProduct = new Map();
+                          for (const ret of (state.returns || [])) {
+                            if (String(ret.saleId) === String(sale.id)) {
+                              for (const line of (ret.lines || [])) {
+                                returnByProduct.set(line.productId, (returnByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
+                              }
+                            }
+                          }
+                          const undeliveredByProduct = new Map();
+                          for (const adj of (sale.deliveryAdjustments || [])) {
+                            for (const line of (adj.lines || [])) {
+                              undeliveredByProduct.set(line.productId, (undeliveredByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
+                            }
+                          }
+                          openSaleReceiptPrint({
+                            sale,
+                            customers: state.customers || [],
+                            products: state.products || [],
+                            allSales: state.sales || [],
+                            returnByProduct,
+                            undeliveredByProduct,
+                            onPopupBlocked: () => setErrorModal("Popup blocked. Please allow popups to print receipts.")
+                          });
+                        }}
+                      >
+                        Print
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => openSaleEdit(sale)}
                         disabled={Boolean(sale.deliveryConfirmedAt) || Boolean((sale.deliveryAdjustments || []).length) || Boolean(sale.preOrderConfirmedAt) || (state.returns || []).some((ret) => String(ret.saleId) === String(sale.id))}
                       >
