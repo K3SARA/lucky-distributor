@@ -1542,12 +1542,7 @@ const CashierView = ({
       if (!Number.isFinite(qty) || qty <= 0) return acc;
       const preview = returnLinePreview(returnSale, line, qty);
       acc.qty += qty;
-      if (String(draft.condition || "good").toLowerCase() === "good") {
-        acc.amount += Number(preview.returnAmount || 0);
-        acc.goodQty += qty;
-      } else {
-        acc.damagedQty += qty;
-      }
+      acc.damagedQty += qty;
       return acc;
     }, { qty: 0, amount: 0, goodQty: 0, damagedQty: 0 });
   }, [returnLinesDraft, returnSale]);
@@ -1555,7 +1550,7 @@ const CashierView = ({
   const onReturnDraftChange = (productId, patch) => {
     setReturnLinesDraft((current) => ({
       ...current,
-      [productId]: { quantity: current[productId]?.quantity || "", condition: current[productId]?.condition || "good", ...patch }
+      [productId]: { quantity: current[productId]?.quantity || "", condition: "damaged", ...patch }
     }));
   };
 
@@ -1791,7 +1786,7 @@ const CashierView = ({
           return {
             productId: line.productId,
             quantity: qty,
-            condition: draft.condition || "good"
+            condition: "damaged"
           };
         })
         .filter((line) => Number.isFinite(line.quantity) && line.quantity > 0);
@@ -2723,7 +2718,7 @@ const CashierView = ({
                       ), 0)
                     );
                     const soldEffective = Math.max(0, sold - alreadyNotDelivered);
-                    const draft = returnLinesDraft[line.productId] || { quantity: "", condition: "good" };
+                    const draft = returnLinesDraft[line.productId] || { quantity: "", condition: "damaged" };
                     const draftQty = Number(draft.quantity || 0);
                     const remainingBeforeDraft = Math.max(0, sold - returned - alreadyNotDelivered);
                     const remainingLive = Math.max(0, sold - returned - alreadyNotDelivered - (Number.isFinite(draftQty) ? draftQty : 0));
@@ -2749,16 +2744,12 @@ const CashierView = ({
                           ) : null}
                           {draftQty > 0 ? (
                             <p className="return-line-credit">
-                              {draft.condition === "good" ? `Return credit ${currency(preview.returnAmount)}` : `Replacement issued from stock (No financial credit)`}
+                              Replacement issued from stock (No financial credit)
                             </p>
                           ) : null}
                         </div>
                         <div className="return-line-controls">
                           <input type="number" min="0" max={remainingBeforeDraft} value={draft.quantity} onChange={(e) => onReturnDraftChange(line.productId, { quantity: e.target.value })} placeholder="Qty" />
-                          <select value={draft.condition} onChange={(e) => onReturnDraftChange(line.productId, { condition: e.target.value })}>
-                            <option value="good">Good</option>
-                            <option value="damaged">Expired / Damaged</option>
-                          </select>
                         </div>
                       </article>
                     );
@@ -4624,13 +4615,12 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
     for (const ret of (state.returns || [])) {
       for (const line of (ret.lines || [])) {
         rows.push({
-          id: `${ret.id}-${line.productId}-${line.condition}`,
+          id: `${ret.id}-${line.productId}`,
           saleId: ret.saleId,
           item: line.name || line.productId,
           qty: Number(line.quantity || 0),
           amount: Number(line.returnAmount || 0),
           rep: ret.rep || "-",
-          reason: line.condition === "good" ? "Good" : "Expired / Damaged",
           at: ret.createdAt
         });
       }
@@ -4644,7 +4634,6 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
       qty: (row) => Number(row.qty || 0),
       amount: (row) => Number(row.amount || 0),
       rep: (row) => String(row.rep || ""),
-      reason: (row) => String(row.reason || ""),
       at: (row) => new Date(row.at || 0).getTime()
     }),
     [adminReturnRows, tableSort]
@@ -7241,6 +7230,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   <button type="button" className="th-sort" onClick={() => toggleSort("stock", "mrp")}>MRP (LKR){sortMark("stock", "mrp")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("stock", "totalBundles")}>Total Bundles{sortMark("stock", "totalBundles")}</button>
                   <button type="button" className="th-sort" onClick={() => toggleSort("stock", "stock")}>Stock{sortMark("stock", "stock")}</button>
+                  <button type="button" className="th-sort" onClick={() => toggleSort("stock", "returnedStock")}>Returned Lot{sortMark("stock", "returnedStock")}</button>
                   <span className="th-action">Action</span>
                 </header>
                 {sortedStockRows.map((item) => (
@@ -7268,6 +7258,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                       return bundleSize > 0 ? Math.floor(Number(item.stock || 0) / bundleSize) : 0;
                     })()}</span>
                     <span className={item.stock <= 25 ? "low" : ""}>{item.stock}</span>
+                    <span>{item.returnedStock || 0}</span>
                     <span className="action-cell">
                       {canManageStock ? (
                         <button
@@ -7295,7 +7286,6 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                     <button type="button" className="th-sort" onClick={() => toggleSort("returns", "qty")}>Qty{sortMark("returns", "qty")}</button>
                     <button type="button" className="th-sort" onClick={() => toggleSort("returns", "amount")}>Return Value (LKR){sortMark("returns", "amount")}</button>
                     <button type="button" className="th-sort" onClick={() => toggleSort("returns", "rep")}>Rep{sortMark("returns", "rep")}</button>
-                    <button type="button" className="th-sort" onClick={() => toggleSort("returns", "reason")}>Reason{sortMark("returns", "reason")}</button>
                   </header>
                   {sortedAdminReturnRows.length ? sortedAdminReturnRows.map((row) => (
                     <article key={row.id}>
@@ -7304,7 +7294,6 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                       <span>{row.qty}</span>
                       <span>{formatLkrValue(row.amount)}</span>
                       <span>{row.rep}</span>
-                      <span>{row.reason}</span>
                     </article>
                   )) : <p className="form-hint">No returned stock records yet.</p>}
                 </div>
@@ -9447,11 +9436,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   .reduce((acc, adj) => acc + (adj.lines || [])
                     .filter((x) => x.productId === line.productId)
                     .reduce((xAcc, x) => xAcc + Number(x.quantity || 0), 0), 0);
-                const prevReturnedGood = (state.returns || [])
-                  .filter((ret) => String(ret.saleId) === String(deliverySale.id))
-                  .reduce((acc, ret) => acc + (ret.lines || [])
-                    .filter((x) => x.productId === line.productId && String(x.condition || "").toLowerCase() === "good")
-                    .reduce((xAcc, x) => xAcc + Number(x.quantity || 0), 0), 0);
+                const prevReturnedGood = 0; // Refunds are no longer supported; all returns are replacements
                 const maxQty = Math.max(0, Number(line.quantity || 0) - prevUndelivered - prevReturnedGood);
                 return (
                   <article key={`dl-${deliverySale.id}-${line.productId}`}>
@@ -10060,11 +10045,7 @@ export const App = () => {
       for (const ret of (current.returns || [])) {
         if (String(ret.saleId) !== String(saleId)) continue;
         for (const line of (ret.lines || [])) {
-          if (line.condition === "good") {
-            returnedByProduct.set(line.productId, (returnedByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
-          } else {
-            replacedByProduct.set(line.productId, (replacedByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
-          }
+          replacedByProduct.set(line.productId, (replacedByProduct.get(line.productId) || 0) + Number(line.quantity || 0));
         }
       }
 

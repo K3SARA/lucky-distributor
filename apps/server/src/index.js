@@ -2344,13 +2344,9 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
   for (const incoming of lines) {
     const productId = String(incoming.productId || "").trim();
     const quantity = Number(incoming.quantity || 0);
-    const condition = String(incoming.condition || "").trim().toLowerCase();
+    const condition = "damaged";
     if (!productId || !Number.isFinite(quantity) || quantity <= 0) {
       res.status(400).json({ message: "Invalid return line" });
-      return;
-    }
-    if (!["good", "damaged"].includes(condition)) {
-      res.status(400).json({ message: "Return condition must be good or damaged" });
       return;
     }
     const soldLine = saleLineByProduct.get(productId);
@@ -2403,16 +2399,10 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
         if (product && product.returnableBottle !== false) {
           returnedEmptyBottles += Number(line.quantity || 0);
         }
-        if (line.condition !== "good") {
-          // Replacement: deduct fresh item from stock
-          if (product) {
-            product.stock = Number((Number(product.stock || 0) - Number(line.quantity || 0)).toFixed(2));
-          }
-          continue;
-        }
+        // Replacement: deduct fresh item from stock, add returned item to returned lot
         if (product) {
-          // Refund: add returned good item back to stock
-          product.stock = Number((Number(product.stock || 0) + Number(line.quantity || 0)).toFixed(2));
+          product.stock = Number((Number(product.stock || 0) - Number(line.quantity || 0)).toFixed(2));
+          product.returnedStock = Number((Number(product.returnedStock || 0) + Number(line.quantity || 0)).toFixed(2));
         }
       }
       const saleIndex = (draft.sales || []).findIndex((item) => String(item.id) === saleId);
