@@ -314,6 +314,13 @@
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
 }
 
+.rep-redesign-scope .cashier-tabs .cashier-nav-deliveries.active {
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  color: #0369a1;
+  border-color: rgba(14, 165, 233, 0.2);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.1);
+}
+
 .rep-redesign-scope
 
 /* ---------- CASHIER SIDEBAR — Colorful ---------- */
@@ -361,6 +368,12 @@
   background: linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%) !important;
   color: #047857 !important;
   border-color: rgba(16, 185, 129, 0.25) !important;
+}
+
+.rep-redesign-scope .cashier-mobile-sidebar .cashier-nav-deliveries.active {
+  background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%) !important;
+  color: #0369a1 !important;
+  border-color: rgba(14, 165, 233, 0.25) !important;
 }
 
 .rep-redesign-scope .cashier-mobile-sidebar .cashier-sidebar-logout {

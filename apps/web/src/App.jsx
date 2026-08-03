@@ -1009,6 +1009,73 @@ const CashierView = ({
     setShowAddCustomerModal(true);
   };
 
+  const [deliveriesSearch, setDeliveriesSearch] = useState("");
+  const [deliverySaleId, setDeliverySaleId] = useState("");
+  const [deliveryDraft, setDeliveryDraft] = useState({});
+  const [deliveryCashReceived, setDeliveryCashReceived] = useState("");
+  const [deliveryChequeAmount, setDeliveryChequeAmount] = useState("");
+  const [deliveryChequeNo, setDeliveryChequeNo] = useState("");
+  const [deliveryChequeDate, setDeliveryChequeDate] = useState("");
+  const [deliveryChequeBank, setDeliveryChequeBank] = useState("");
+  const [savingDelivery, setSavingDelivery] = useState(false);
+  const [deliveryError, setDeliveryError] = useState("");
+
+  const deliverySale = useMemo(() => (state.sales || []).find((s) => String(s.id) === String(deliverySaleId)), [state.sales, deliverySaleId]);
+  const deliverySettlementLimit = deliverySale ? Math.max(0, Number(deliverySale.total || 0) - Number(deliverySale.totalPaymentReceived || 0)) : 0;
+
+  const sortedDeliveryRows = useMemo(() => {
+    const rows = [];
+    for (const sale of (state.sales || [])) {
+      if (String(sale.cashier || "").trim().toLowerCase() !== String(cashier || "").trim().toLowerCase()) continue;
+      rows.push({
+        id: sale.id,
+        sale,
+        when: new Date(sale.createdAt).toLocaleString(),
+        rep: sale.cashier || "-",
+        lorry: sale.lorry || "-",
+        total: sale.total,
+        confirmed: Boolean(sale.deliveryConfirmedAt)
+      });
+    }
+    return rows.sort((a, b) => new Date(b.sale.createdAt).getTime() - new Date(a.sale.createdAt).getTime());
+  }, [state.sales, cashier]);
+
+  const openDeliveryModal = (sale) => {
+    setDeliverySaleId(String(sale.id));
+    setDeliveryDraft({});
+    setDeliveryCashReceived("");
+    setDeliveryChequeAmount("");
+    setDeliveryChequeNo("");
+    setDeliveryChequeDate("");
+    setDeliveryChequeBank("");
+    setDeliveryError("");
+  };
+
+  const onDeliveryDraftChange = (productId, value) => setDeliveryDraft((c) => ({ ...c, [productId]: value }));
+
+  const saveDeliveryAdjust = async () => {
+    try {
+      if (!deliverySale) return setDeliveryError("Sale not found.");
+      const lines = (deliverySale.lines || []).map((line) => ({ productId: line.productId, quantity: Number(deliveryDraft[line.productId] || 0) })).filter((line) => line.quantity > 0);
+      const cash = Number(deliveryCashReceived || 0);
+      const cheque = Number(deliveryChequeAmount || 0);
+      if (cash < 0) return setDeliveryError("Cash received must be 0 or more.");
+      if (cheque < 0) return setDeliveryError("Cheque amount must be 0 or more.");
+      if ((cash + cheque) > Number((deliverySettlementLimit + 0.01).toFixed(2))) return setDeliveryError(`Cannot exceed ${currency(deliverySettlementLimit)}.`);
+      if (cheque > 0 && (!deliveryChequeNo.trim() || !deliveryChequeDate || !deliveryChequeBank.trim())) return setDeliveryError("Enter cheque details.");
+      
+      setSavingDelivery(true);
+      setDeliveryError("");
+      await submitDeliveryAdjustment(deliverySale.id, { lines, markConfirmed: true, cashReceived: cash, chequeAmount: cheque, chequeNo: deliveryChequeNo.trim(), chequeDate: deliveryChequeDate, chequeBank: deliveryChequeBank.trim() });
+      openDeliveryModal({ id: "" });
+      setMessage(`Delivery confirmed for sale #${deliverySale.id}.`);
+    } catch (err) {
+      setDeliveryError(err.message);
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
+
   const saveNewCustomer = async () => {
     if (!newCustomerName.trim()) {
       alert("Customer name is required.");
@@ -2072,6 +2139,7 @@ const CashierView = ({
         <button type="button" className={`cashier-nav-sales ${cashierPage === "sales" ? "active" : ""}`} onClick={() => setCashierPage("sales")}><span className="nav-emoji" aria-hidden="true">📊</span>Sales</button>
         <button type="button" className={`cashier-nav-stock ${cashierPage === "stock" ? "active" : ""}`} onClick={() => setCashierPage("stock")}><span className="nav-emoji" aria-hidden="true">📦</span>Stock</button>
         <button type="button" className={`cashier-nav-customers ${cashierPage === "customers" ? "active" : ""}`} onClick={() => setCashierPage("customers")}><span className="nav-emoji" aria-hidden="true">👥</span>Customers</button>
+        <button type="button" className={`cashier-nav-deliveries ${cashierPage === "deliveries" ? "active" : ""}`} onClick={() => setCashierPage("deliveries")}><span className="nav-emoji" aria-hidden="true">✅</span>Confirm Deliveries</button>
         <button type="button" className="cashier-sidebar-logout" onClick={onLogout}><span className="nav-emoji" aria-hidden="true">🚪</span>Log Out</button>
         <div className="side-menu-footer">
           <a href="https://www.jnco.tech" target="_blank" rel="noreferrer">
@@ -2087,6 +2155,7 @@ const CashierView = ({
         <button type="button" className={`cashier-nav-sales ${cashierPage === "sales" ? "active" : ""}`} onClick={() => setCashierPage("sales")}><span className="nav-emoji" aria-hidden="true">📊</span>Sales</button>
         <button type="button" className={`cashier-nav-stock ${cashierPage === "stock" ? "active" : ""}`} onClick={() => setCashierPage("stock")}><span className="nav-emoji" aria-hidden="true">📦</span>Stock</button>
         <button type="button" className={`cashier-nav-customers ${cashierPage === "customers" ? "active" : ""}`} onClick={() => setCashierPage("customers")}><span className="nav-emoji" aria-hidden="true">👥</span>Customers</button>
+        <button type="button" className={`cashier-nav-deliveries ${cashierPage === "deliveries" ? "active" : ""}`} onClick={() => setCashierPage("deliveries")}><span className="nav-emoji" aria-hidden="true">✅</span>Confirm Deliveries</button>
       </div>
 
       {cashierPage === "billing" ? (
@@ -3421,6 +3490,168 @@ const CashierView = ({
             </div>
           </section>
         </main>
+      ) : null}
+
+      {cashierPage === "deliveries" ? (
+        <main className="grid rep-ui-2">
+          <section className="panel rep-sales-panel">
+            <h2>Confirm Deliveries</h2>
+            <input
+              className="search-icon-input imperfect-search-input"
+              value={deliveriesSearch}
+              onChange={(e) => setDeliveriesSearch(e.target.value)}
+              placeholder="Search deliveries"
+            />
+            <div className="list rep-sales-list">
+              {sortedDeliveryRows
+                .filter((row) => matchesSearch(deliveriesSearch, row.id, row.lorry, row.when, row.sale?.customerName, row.confirmed ? "confirmed" : "pending"))
+                .map((row) => (
+                  <article key={`rep-del-${row.id}`} className="list-row rep-sale-card">
+                    <div className="rep-sale-main">
+                      <div className="rep-sale-id-row">
+                        <strong>#{row.id}</strong>
+                        <span className={row.confirmed ? "rep-sale-payment rep-sale-payment-cash" : "rep-sale-payment rep-sale-payment-credit"}>
+                          {row.confirmed ? "Confirmed" : "Pending"}
+                        </span>
+                      </div>
+                      <p className="rep-sale-meta">{row.when}</p>
+                      <p className="rep-sale-customer">{row.sale.customerName || "Walk-in"}</p>
+                      <p className="rep-sale-meta">Lorry: {row.lorry}</p>
+                    </div>
+                    <div className="rep-sale-side">
+                      <strong className="rep-sale-total">{currency(row.total)}</strong>
+                      <div className="sales-row-actions">
+                        <button
+                          type="button"
+                          onClick={() => openDeliveryModal(row.sale)}
+                        >
+                          {row.confirmed ? "Update" : "Confirm"}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              {sortedDeliveryRows.filter((row) => matchesSearch(deliveriesSearch, row.id, row.lorry, row.when, row.sale?.customerName, row.confirmed ? "confirmed" : "pending")).length === 0 ? (
+                <p className="form-hint">No deliveries found.</p>
+              ) : null}
+            </div>
+          </section>
+        </main>
+      ) : null}
+
+      {deliverySale ? (
+        <div className="low-stock-modal rep-fullscreen-sheet-backdrop" onClick={() => openDeliveryModal({ id: "" })}>
+          <div className="low-stock-modal-card rep-fullscreen-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="low-stock-modal-head rep-fullscreen-sheet-head">
+              <h3>Confirm Delivery #{deliverySale.id}</h3>
+              <button type="button" className="rep-close-sheet-btn" onClick={() => openDeliveryModal({ id: "" })}>&times;</button>
+            </div>
+            <p className="form-hint" style={{ padding: "0 1rem" }}>{new Date(deliverySale.createdAt).toLocaleString()} • {deliverySale.customerName || "Walk-in"} • Lorry: {deliverySale.lorry || "-"}</p>
+            <div className="admin-table deliveries-lines-table" style={{ margin: "1rem" }}>
+              <header>
+                <span>Item</span>
+                <span>Sold</span>
+                <span>Already ND</span>
+                <span>Not Delivered</span>
+              </header>
+              {(deliverySale.lines || []).map((line) => {
+                const prevUndelivered = (deliverySale.deliveryAdjustments || [])
+                  .reduce((acc, adj) => acc + (adj.lines || [])
+                    .filter((x) => x.productId === line.productId)
+                    .reduce((xAcc, x) => xAcc + Number(x.quantity || 0), 0), 0);
+                const prevReturnedGood = 0;
+                const maxQty = Math.max(0, Number(line.quantity || 0) - prevUndelivered - prevReturnedGood);
+                return (
+                  <article key={`dl-${deliverySale.id}-${line.productId}`}>
+                    <span>{line.name}</span>
+                    <span>{line.quantity}</span>
+                    <span>{prevUndelivered}</span>
+                    <span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={maxQty}
+                        value={deliveryDraft[line.productId] ?? ""}
+                        onChange={(e) => onDeliveryDraftChange(line.productId, e.target.value)}
+                        placeholder={`max ${maxQty}`}
+                        disabled={Boolean(deliverySale.deliveryConfirmedAt)}
+                      />
+                    </span>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="delivery-settlement-panel" style={{ margin: "1rem" }}>
+              <div className="delivery-settlement-head">
+                <div>
+                  <h4>Settlement At Delivery</h4>
+                  <p>Collect the delivery payment clearly before confirming this bill.</p>
+                </div>
+                <span className={`rep-sale-payment rep-sale-payment-${String(deliverySale.paymentType || "").toLowerCase()}`}>{deliverySale.paymentType}</span>
+              </div>
+              <div className="delivery-settlement-kpis">
+                <article>
+                  <span>Order Total</span>
+                  <strong>{currency(deliverySale.total || 0)}</strong>
+                </article>
+                <article>
+                  <span>Previously Paid</span>
+                  <strong>{currency(deliverySale.totalPaymentReceived || 0)}</strong>
+                </article>
+                <article>
+                  <span>To Settle</span>
+                  <strong style={{ color: "#d97706" }}>{currency(deliverySettlementLimit)}</strong>
+                </article>
+              </div>
+              <div className="delivery-settlement-form">
+                <label>
+                  <span>Cash Collected</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={deliveryCashReceived}
+                    onChange={(e) => setDeliveryCashReceived(e.target.value)}
+                    placeholder="e.g. 1500"
+                  />
+                </label>
+                <label>
+                  <span>Cheque Amount</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={deliveryChequeAmount}
+                    onChange={(e) => setDeliveryChequeAmount(e.target.value)}
+                    placeholder="e.g. 5000"
+                  />
+                </label>
+              </div>
+              {Number(deliveryChequeAmount) > 0 ? (
+                <div className="delivery-cheque-details grid-2">
+                  <label>
+                    <span>Cheque No</span>
+                    <input value={deliveryChequeNo} onChange={(e) => setDeliveryChequeNo(e.target.value)} placeholder="000123" />
+                  </label>
+                  <label>
+                    <span>Cheque Date</span>
+                    <input type="date" value={deliveryChequeDate} onChange={(e) => setDeliveryChequeDate(e.target.value)} />
+                  </label>
+                  <label style={{ gridColumn: "span 2" }}>
+                    <span>Bank & Branch</span>
+                    <input value={deliveryChequeBank} onChange={(e) => setDeliveryChequeBank(e.target.value)} placeholder="BOC Town Branch" />
+                  </label>
+                </div>
+              ) : null}
+            </div>
+            {deliveryError ? <p className="notice" style={{ margin: "1rem" }}>{deliveryError}</p> : null}
+            <div className="low-stock-modal-actions" style={{ padding: "1rem" }}>
+              <button type="button" onClick={saveDeliveryAdjust} disabled={savingDelivery || Boolean(deliverySale.deliveryConfirmedAt)}>
+                {savingDelivery ? "Confirming..." : (deliverySale.deliveryConfirmedAt ? "Already Confirmed" : "Confirm Delivery")}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {showCustomerPicker ? (
@@ -10174,15 +10405,9 @@ export const App = () => {
         showErrorModal(`${bundleDiscountViolation.lineName} exceeds bundle discount limit. Allowed ${currency(bundleDiscountViolation.allowedBundleDiscount)} for ${bundleDiscountViolation.fullBundles} bundle(s).`);
         return;
       }
-      // A pre-order isn't a debt until it's confirmed at delivery (payment method
-      // isn't even chosen yet), so credit limit is enforced there instead — not here.
-      if (!isPreOrderMode && selectedCustomerCreditLimit > 0) {
-        const projectedOutstanding = Number((selectedCustomerOutstandingForLimit + totalAfterCustomerCredit).toFixed(2));
-        if (projectedOutstanding > selectedCustomerCreditLimit) {
-          const availableCreditLimit = Math.max(0, Number((selectedCustomerCreditLimit - selectedCustomerOutstandingForLimit).toFixed(2)));
-          showErrorModal(`Credit limit exceeded for ${customerName}. Limit is ${currency(selectedCustomerCreditLimit)}. Current outstanding is ${currency(selectedCustomerOutstandingForLimit)}. Available limit is ${currency(availableCreditLimit)}.`);
-          return;
-        }
+      if (!isPreOrderMode && selectedCustomerOutstandingForLimit > 0) {
+        showErrorModal(`Cannot create bill. ${customerName} has an outstanding balance of ${currency(selectedCustomerOutstandingForLimit)}.`);
+        return;
       }
       const sale = await submitSale({
         requestId: createSaleRequestId(),
