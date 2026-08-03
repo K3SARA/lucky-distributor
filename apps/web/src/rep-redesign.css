@@ -1255,3 +1255,8 @@
   transform: none;
   box-shadow: none;
 }
+
+/* Fix flex child blowout: allow panels to shrink so tables inside them can overflow properly */
+.rep-redesign-scope .panel {
+  min-width: 0;
+}
