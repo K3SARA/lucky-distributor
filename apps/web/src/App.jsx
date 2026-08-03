@@ -2104,7 +2104,7 @@ const CashierView = ({
   const billingFocusMode = cashierPage === "billing";
 
   return (
-    <div className={cashierPage === "billing" ? "rep-redesign-scope" : ""}>
+    <div className="rep-redesign-scope">
       {message && !/(error|invalid|required|cannot|unable|failed|not found|select|enter|type|exceeds)/i.test(String(message)) ? <p className="notice">{message}</p> : null}
       {!billingFocusMode ? (
         <button
