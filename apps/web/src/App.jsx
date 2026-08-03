@@ -3546,109 +3546,111 @@ const CashierView = ({
               <h3>Confirm Delivery #{deliverySale.id}</h3>
               <button type="button" className="rep-close-sheet-btn" onClick={() => openDeliveryModal({ id: "" })}>&times;</button>
             </div>
-            <p className="form-hint" style={{ padding: "0 1rem" }}>{new Date(deliverySale.createdAt).toLocaleString()} • {deliverySale.customerName || "Walk-in"} • Lorry: {deliverySale.lorry || "-"}</p>
-            <div className="admin-table deliveries-lines-table" style={{ margin: "1rem" }}>
-              <header>
-                <span>Item</span>
-                <span>Sold</span>
-                <span>Already ND</span>
-                <span>Not Delivered</span>
-              </header>
-              {(deliverySale.lines || []).map((line) => {
-                const prevUndelivered = (deliverySale.deliveryAdjustments || [])
-                  .reduce((acc, adj) => acc + (adj.lines || [])
-                    .filter((x) => x.productId === line.productId)
-                    .reduce((xAcc, x) => xAcc + Number(x.quantity || 0), 0), 0);
-                const prevReturnedGood = 0;
-                const maxQty = Math.max(0, Number(line.quantity || 0) - prevUndelivered - prevReturnedGood);
-                return (
-                  <article key={`dl-${deliverySale.id}-${line.productId}`}>
-                    <span>{line.name}</span>
-                    <span>{line.quantity}</span>
-                    <span>{prevUndelivered}</span>
-                    <span>
-                      <input
-                        type="number"
-                        min="0"
-                        max={maxQty}
-                        value={deliveryDraft[line.productId] ?? ""}
-                        onChange={(e) => onDeliveryDraftChange(line.productId, e.target.value)}
-                        placeholder={`max ${maxQty}`}
-                        disabled={Boolean(deliverySale.deliveryConfirmedAt)}
-                      />
-                    </span>
+            <div className="rep-fullscreen-sheet-body" style={{ paddingBottom: "2rem" }}>
+              <p className="form-hint" style={{ padding: "0" }}>{new Date(deliverySale.createdAt).toLocaleString()} • {deliverySale.customerName || "Walk-in"} • Lorry: {deliverySale.lorry || "-"}</p>
+              <div className="admin-table deliveries-lines-table" style={{ margin: "1rem 0" }}>
+                <header>
+                  <span>Item</span>
+                  <span>Sold</span>
+                  <span>Already ND</span>
+                  <span>Not Delivered</span>
+                </header>
+                {(deliverySale.lines || []).map((line) => {
+                  const prevUndelivered = (deliverySale.deliveryAdjustments || [])
+                    .reduce((acc, adj) => acc + (adj.lines || [])
+                      .filter((x) => x.productId === line.productId)
+                      .reduce((xAcc, x) => xAcc + Number(x.quantity || 0), 0), 0);
+                  const prevReturnedGood = 0;
+                  const maxQty = Math.max(0, Number(line.quantity || 0) - prevUndelivered - prevReturnedGood);
+                  return (
+                    <article key={`dl-${deliverySale.id}-${line.productId}`}>
+                      <span>{line.name}</span>
+                      <span>{line.quantity}</span>
+                      <span>{prevUndelivered}</span>
+                      <span>
+                        <input
+                          type="number"
+                          min="0"
+                          max={maxQty}
+                          value={deliveryDraft[line.productId] ?? ""}
+                          onChange={(e) => onDeliveryDraftChange(line.productId, e.target.value)}
+                          placeholder={`max ${maxQty}`}
+                          disabled={Boolean(deliverySale.deliveryConfirmedAt)}
+                        />
+                      </span>
+                    </article>
+                  );
+                })}
+              </div>
+              <div className="delivery-settlement-panel" style={{ margin: "1rem 0" }}>
+                <div className="delivery-settlement-head">
+                  <div>
+                    <h4>Settlement At Delivery</h4>
+                    <p>Collect the delivery payment clearly before confirming this bill.</p>
+                  </div>
+                  <span className={`rep-sale-payment rep-sale-payment-${String(deliverySale.paymentType || "").toLowerCase()}`}>{deliverySale.paymentType}</span>
+                </div>
+                <div className="delivery-settlement-kpis">
+                  <article>
+                    <span>Order Total</span>
+                    <strong>{currency(deliverySale.total || 0)}</strong>
                   </article>
-                );
-              })}
-            </div>
-            <div className="delivery-settlement-panel" style={{ margin: "1rem" }}>
-              <div className="delivery-settlement-head">
-                <div>
-                  <h4>Settlement At Delivery</h4>
-                  <p>Collect the delivery payment clearly before confirming this bill.</p>
+                  <article>
+                    <span>Previously Paid</span>
+                    <strong>{currency(deliverySale.totalPaymentReceived || 0)}</strong>
+                  </article>
+                  <article>
+                    <span>To Settle</span>
+                    <strong style={{ color: "#d97706" }}>{currency(deliverySettlementLimit)}</strong>
+                  </article>
                 </div>
-                <span className={`rep-sale-payment rep-sale-payment-${String(deliverySale.paymentType || "").toLowerCase()}`}>{deliverySale.paymentType}</span>
-              </div>
-              <div className="delivery-settlement-kpis">
-                <article>
-                  <span>Order Total</span>
-                  <strong>{currency(deliverySale.total || 0)}</strong>
-                </article>
-                <article>
-                  <span>Previously Paid</span>
-                  <strong>{currency(deliverySale.totalPaymentReceived || 0)}</strong>
-                </article>
-                <article>
-                  <span>To Settle</span>
-                  <strong style={{ color: "#d97706" }}>{currency(deliverySettlementLimit)}</strong>
-                </article>
-              </div>
-              <div className="delivery-settlement-form">
-                <label>
-                  <span>Cash Collected</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={deliveryCashReceived}
-                    onChange={(e) => setDeliveryCashReceived(e.target.value)}
-                    placeholder="e.g. 1500"
-                  />
-                </label>
-                <label>
-                  <span>Cheque Amount</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={deliveryChequeAmount}
-                    onChange={(e) => setDeliveryChequeAmount(e.target.value)}
-                    placeholder="e.g. 5000"
-                  />
-                </label>
-              </div>
-              {Number(deliveryChequeAmount) > 0 ? (
-                <div className="delivery-cheque-details grid-2">
+                <div className="delivery-settlement-form">
                   <label>
-                    <span>Cheque No</span>
-                    <input value={deliveryChequeNo} onChange={(e) => setDeliveryChequeNo(e.target.value)} placeholder="000123" />
+                    <span>Cash Collected</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deliveryCashReceived}
+                      onChange={(e) => setDeliveryCashReceived(e.target.value)}
+                      placeholder="e.g. 1500"
+                    />
                   </label>
                   <label>
-                    <span>Cheque Date</span>
-                    <input type="date" value={deliveryChequeDate} onChange={(e) => setDeliveryChequeDate(e.target.value)} />
-                  </label>
-                  <label style={{ gridColumn: "span 2" }}>
-                    <span>Bank & Branch</span>
-                    <input value={deliveryChequeBank} onChange={(e) => setDeliveryChequeBank(e.target.value)} placeholder="BOC Town Branch" />
+                    <span>Cheque Amount</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={deliveryChequeAmount}
+                      onChange={(e) => setDeliveryChequeAmount(e.target.value)}
+                      placeholder="e.g. 5000"
+                    />
                   </label>
                 </div>
-              ) : null}
-            </div>
-            {deliveryError ? <p className="notice" style={{ margin: "1rem" }}>{deliveryError}</p> : null}
-            <div className="low-stock-modal-actions" style={{ padding: "1rem" }}>
-              <button type="button" onClick={saveDeliveryAdjust} disabled={savingDelivery || Boolean(deliverySale.deliveryConfirmedAt)}>
-                {savingDelivery ? "Confirming..." : (deliverySale.deliveryConfirmedAt ? "Already Confirmed" : "Confirm Delivery")}
-              </button>
+                {Number(deliveryChequeAmount) > 0 ? (
+                  <div className="delivery-cheque-details grid-2">
+                    <label>
+                      <span>Cheque No</span>
+                      <input value={deliveryChequeNo} onChange={(e) => setDeliveryChequeNo(e.target.value)} placeholder="000123" />
+                    </label>
+                    <label>
+                      <span>Cheque Date</span>
+                      <input type="date" value={deliveryChequeDate} onChange={(e) => setDeliveryChequeDate(e.target.value)} />
+                    </label>
+                    <label style={{ gridColumn: "span 2" }}>
+                      <span>Bank & Branch</span>
+                      <input value={deliveryChequeBank} onChange={(e) => setDeliveryChequeBank(e.target.value)} placeholder="BOC Town Branch" />
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+              {deliveryError ? <p className="notice" style={{ margin: "1rem 0" }}>{deliveryError}</p> : null}
+              <div className="low-stock-modal-actions" style={{ padding: "1.5rem 0 2rem" }}>
+                <button type="button" onClick={saveDeliveryAdjust} disabled={savingDelivery || Boolean(deliverySale.deliveryConfirmedAt)}>
+                  {savingDelivery ? "Confirming..." : (deliverySale.deliveryConfirmedAt ? "Already Confirmed" : "Confirm Delivery")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
