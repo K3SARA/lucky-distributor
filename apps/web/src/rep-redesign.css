@@ -1,4 +1,4 @@
-.rep-redesign-scope
+/*
 /* ==============================================
    REP UI REDESIGN v3 — Modern Soft Pastel Theme
    Safe CSS-only overrides. Production-safe.
@@ -1031,7 +1031,7 @@
   border-color: rgba(196, 181, 253, 0.35);
 }
 
-.rep-redesign-scope
+/*
 /* ---------- MOBILE OVERRIDES ---------- */
 @media (max-width: 640px) {
   .auth-card {
