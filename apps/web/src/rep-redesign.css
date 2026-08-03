@@ -792,7 +792,17 @@
 
 .rep-redesign-scope .rep-stock-table {
   border-radius: 16px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@media (max-width: 899px) {
+  .rep-redesign-scope .rep-stock-table header,
+  .rep-redesign-scope .rep-stock-table article {
+    width: max-content;
+    min-width: 100%;
+    grid-template-columns: minmax(200px, 1.5fr) minmax(100px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) !important;
+  }
 }
 
 .rep-redesign-scope .rep-stock-table header {
