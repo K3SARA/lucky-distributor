@@ -2439,7 +2439,7 @@ app.post("/returns", requireAuth, requireRole("cashier", "admin"), (req, res) =>
   res.status(201).json(record);
 });
 
-app.post("/sales/:id/delivery-adjust", requireAuth, requireRole("admin", "manager"), (req, res) => {
+app.post("/sales/:id/delivery-adjust", requireAuth, requireRole("admin", "manager", "cashier"), (req, res) => {
   const { id } = req.params;
   const body = req.body || {};
   const incomingLines = Array.isArray(body.lines) ? body.lines : [];
@@ -2454,6 +2454,10 @@ app.post("/sales/:id/delivery-adjust", requireAuth, requireRole("admin", "manage
   const sale = (state.sales || []).find((item) => String(item.id) === String(id));
   if (!sale) {
     res.status(404).json({ message: "Sale not found" });
+    return;
+  }
+  if (req.user.role === "cashier" && String(sale.cashier).trim().toLowerCase() !== String(req.user.username).trim().toLowerCase()) {
+    res.status(403).json({ message: "Insufficient permissions. You can only confirm your own deliveries." });
     return;
   }
   if (sale.orderType === "preorder") {
