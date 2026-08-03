@@ -3451,8 +3451,9 @@ const CashierView = ({
               onChange={(e) => setRepStockSearch(e.target.value)}
               placeholder="Search stock item"
             />
-            <div className="rep-stock-table">
-              <header>
+            <div className="rep-stock-table-wrapper">
+              <div className="rep-stock-table">
+                <header>
                 <button type="button" className="th-sort" onClick={() => toggleRepStockSort("name")}>Item{repStockSortMark("name")}</button>
                 <button type="button" className="th-sort" onClick={() => toggleRepStockSort("billingPrice")}>B.Price (LKR){repStockSortMark("billingPrice")}</button>
                 <button type="button" className="th-sort" onClick={() => toggleRepStockSort("mrp")}>MRP{repStockSortMark("mrp")}</button>
@@ -3466,13 +3467,15 @@ const CashierView = ({
                   <span>{row.remaining}</span>
                 </article>
               ))}
+              </div>
             </div>
           </section>
 
           <section className="panel rep-stock-panel">
             <h2>Damaged / Expired Stock</h2>
-            <div className="rep-stock-table rep-stock-table-danger">
-              <header>
+            <div className="rep-stock-table-wrapper">
+              <div className="rep-stock-table rep-stock-table-danger">
+                <header>
                 <button type="button" className="th-sort" onClick={() => toggleRepStockSort("name")}>Item{repStockSortMark("name")}</button>
                 <button type="button" className="th-sort" onClick={() => toggleRepStockSort("billingPrice")}>B.Price (LKR){repStockSortMark("billingPrice")}</button>
                 <button type="button" className="th-sort" onClick={() => toggleRepStockSort("mrp")}>MRP{repStockSortMark("mrp")}</button>
@@ -3487,6 +3490,7 @@ const CashierView = ({
                     <span>{row.damaged}</span>
                   </article>
                 )) : <p className="form-hint">No damaged/expired items recorded yet.</p>}
+              </div>
             </div>
           </section>
         </main>

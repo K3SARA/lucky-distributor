@@ -790,10 +790,19 @@
   background: linear-gradient(180deg, #fff5f5 0%, #fee2e2 100%);
 }
 
-.rep-redesign-scope .rep-stock-table {
+.rep-redesign-scope .rep-stock-table-wrapper {
   border-radius: 16px;
   overflow-x: auto;
   overflow-y: hidden;
+  box-shadow: 0 0 0 1px #d2dcea;
+}
+
+.rep-redesign-scope .rep-stock-table-wrapper:has(.rep-stock-table-danger) {
+  box-shadow: 0 0 0 1px #efc8c4;
+}
+
+.rep-redesign-scope .rep-stock-table {
+  border: none;
 }
 
 @media (max-width: 899px) {
