@@ -9978,8 +9978,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
               <button type="button" onClick={() => { setShowResetDataModal(false); setResetDataConfirmText(""); }}>Close</button>
             </div>
             <p className="confirm-modal-text">
-              This permanently deletes sales, returns, stock movements, customers, customer credits, empty bottle
-              records, and staff. This cannot be undone.
+              This permanently deletes system records (sales, returns, stock movements, staff, etc.). Choose an option below to specify what data to retain. This action cannot be undone.
             </p>
             <label className="stock-form-field">
               <span>Type DELETE to confirm</span>
@@ -9989,14 +9988,30 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 placeholder="DELETE"
               />
             </label>
-            <div className="confirm-modal-actions">
+            <div className="confirm-modal-actions" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <button
+                type="button"
+                className="row-danger"
+                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
+                onClick={() => handleResetAllData("keep-customers")}
+              >
+                Delete all data except Customer details
+              </button>
+              <button
+                type="button"
+                className="row-danger"
+                disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
+                onClick={() => handleResetAllData("keep-customers-and-products")}
+              >
+                Delete all data except Customers & Products
+              </button>
               <button
                 type="button"
                 className="row-danger"
                 disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
                 onClick={() => handleResetAllData("keep-products")}
               >
-                Delete all data instead of Products(SKUs)
+                Delete all data except Products (SKUs)
               </button>
               <button
                 type="button"
@@ -10004,7 +10019,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                 disabled={resettingData || resetDataConfirmText.trim().toUpperCase() !== "DELETE"}
                 onClick={() => handleResetAllData("full")}
               >
-                Delete all data
+                Delete all data (Full Reset)
               </button>
             </div>
           </div>

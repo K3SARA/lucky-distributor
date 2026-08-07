@@ -1019,8 +1019,9 @@ app.delete("/customers/:id", requireAuth, requireAdminOrManagerFullAccess, (req,
 
 app.post("/admin/reset-data", requireAuth, requireRole("admin"), (req, res) => {
   const mode = String(req.body?.mode || "").trim();
-  if (!["keep-products", "full"].includes(mode)) {
-    res.status(400).json({ message: "mode must be 'keep-products' or 'full'" });
+  const validModes = ["keep-products", "keep-customers", "keep-customers-and-products", "full"];
+  if (!validModes.includes(mode)) {
+    res.status(400).json({ message: "Invalid reset mode specified" });
     return;
   }
 
@@ -1028,13 +1029,20 @@ app.post("/admin/reset-data", requireAuth, requireRole("admin"), (req, res) => {
     draft.sales = [];
     draft.returns = [];
     draft.stockMovements = [];
-    draft.customers = [];
     draft.customerCredits = [];
     draft.emptyBottleCollections = [];
     draft.staff = [];
-    if (mode === "full") {
+    draft.purchases = [];
+    draft.suppliers = [];
+
+    if (mode !== "keep-customers" && mode !== "keep-customers-and-products") {
+      draft.customers = [];
+    }
+
+    if (mode !== "keep-products" && mode !== "keep-customers-and-products") {
       draft.products = [];
     }
+
     return draft;
   });
 
