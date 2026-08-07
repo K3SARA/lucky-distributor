@@ -732,6 +732,7 @@ const openSaleReceiptPrint = ({
   }
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt #${escapeHtml(sale.id)}</title><style>
+@media print { .no-print { display: none !important; } }
 @page { size: 80mm auto; margin: 3mm; }
 body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #000; font-size: 16px; font-weight: 800; }
 .sheet { width: 100%; }
@@ -763,7 +764,12 @@ th { font-size: 14px; text-transform: uppercase; border-bottom: 2px solid #000; 
 .sign-line { border-bottom: 2px dotted #000; height: 20px; margin-bottom: 4px; }
 .sign-label { font-size: 15px; font-weight: 900; }
 .powered { text-align: center; font-size: 13px; margin-top: 24px; color: #000; font-weight: 800; }
-</style></head><body><div class="sheet">
+</style></head><body>
+<div class="no-print" style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: space-between; align-items: center; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+  <button onclick="window.close()" style="padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: bold; background: #f1f5f9; color: #334155; border: 1px solid #94a3b8; border-radius: 6px;">← Back / Close</button>
+  <button onclick="window.print()" style="padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: bold; background: #2563eb; color: #fff; border: none; border-radius: 6px;">Print Receipt</button>
+</div>
+<div class="sheet">
 <div class="header-block"><img src="/lucky-logo.png" class="logo" alt="Logo" /><div class="header-text"><div class="brand-title">LUCKY LANKA DISTRIBUTOR - POLONNARUWA</div><div class="brand-sub">Polonnaruwa. Tel : +94 74 014 2898, +94 27 205 4887</div><div class="tag">Original bill</div></div></div>
 <div class="meta">
 Customer: ${escapeHtml(pickedCustomer)}<br/>
@@ -830,6 +836,7 @@ const openPreOrderReceiptPrint = ({
   }
 
   const receiptHtml = `<!doctype html><html><head><meta charset="utf-8" /><title>Pre-Order #${escapeHtml(sale.id)}</title><style>
+@media print { .no-print { display: none !important; } }
 @page { size: 80mm auto; margin: 3mm; }
 body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #000; font-size: 16px; font-weight: 800; }
 .sheet { width: 100%; }
@@ -846,7 +853,12 @@ th { font-size: 14px; text-transform: uppercase; font-weight: 900; }
 .sign-box { margin-top: 36px; }
 .sign-line { border-bottom: 2px dotted #000; height: 30px; }
 .sign-label { margin-top: 4px; font-size: 15px; text-align: center; font-weight: 900; }
-</style></head><body><div class="sheet">
+</style></head><body>
+<div class="no-print" style="margin-bottom: 12px; display: flex; gap: 8px; justify-content: space-between; align-items: center; background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+  <button onclick="window.close()" style="padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: bold; background: #f1f5f9; color: #334155; border: 1px solid #94a3b8; border-radius: 6px;">← Back / Close</button>
+  <button onclick="window.print()" style="padding: 8px 16px; cursor: pointer; font-size: 14px; font-weight: bold; background: #2563eb; color: #fff; border: none; border-radius: 6px;">Print Receipt</button>
+</div>
+<div class="sheet">
 <div class="center"><div class="title">Lucky Distributor</div><div class="tag">Pre-Order</div></div>
 <div class="meta">
 Customer: ${escapeHtml(pickedCustomer)}<br/>
@@ -1515,6 +1527,82 @@ const CashierView = ({
   const [mobileCashierNavOpen, setMobileCashierNavOpen] = useState(false);
   const [repBillingStep, setRepBillingStep] = useState("customer");
 
+  const [repLoadingLorry, setRepLoadingLorry] = useState(lorry || ORDER_LORRIES[0]);
+  const [repLoadingDate, setRepLoadingDate] = useState(new Date().toISOString().split("T")[0]);
+  const [repLoadingSearch, setRepLoadingSearch] = useState("");
+
+  const productInfoById = useMemo(() => {
+    const map = new Map();
+    for (const p of (state.products || [])) {
+      map.set(p.id, p);
+    }
+    return map;
+  }, [state.products]);
+
+  const repLoadingRows = useMemo(() => {
+    const selectedLorry = repLoadingLorry || lorry || ORDER_LORRIES[0];
+    const map = new Map();
+
+    for (const sale of (state.sales || [])) {
+      if (sale.lorry !== selectedLorry) continue;
+      if (repLoadingDate) {
+        const saleDate = new Date(sale.createdAt).toISOString().split("T")[0];
+        if (saleDate !== repLoadingDate) continue;
+      }
+
+      for (const line of (sale.lines || [])) {
+        const key = line.productId || line.name;
+        const info = productInfoById.get(line.productId) || { name: line.name || "Unknown Item", sku: "-", size: "", category: "" };
+        const row = map.get(key) || {
+          key,
+          productId: line.productId || key,
+          name: info.name,
+          sku: info.sku,
+          size: info.size || "",
+          category: info.category || "",
+          qty: 0
+        };
+        row.qty += Number(line.quantity || 0);
+        map.set(key, row);
+      }
+    }
+
+    return [...map.values()]
+      .map((row) => {
+        const bundleSize = getBundleSize(row);
+        const bundles = bundleSize ? Math.floor(row.qty / bundleSize) : 0;
+        const balance = bundleSize ? row.qty % bundleSize : row.qty;
+        return {
+          ...row,
+          bundleSize,
+          bundles,
+          balance
+        };
+      })
+      .filter((row) => row.qty > 0)
+      .sort((a, b) => b.qty - a.qty);
+  }, [state.sales, repLoadingLorry, lorry, repLoadingDate, productInfoById]);
+
+  const filteredRepLoadingRows = useMemo(() => {
+    return repLoadingRows.filter((row) =>
+      matchesSearch(repLoadingSearch, row.name, row.sku, row.category, row.size)
+    );
+  }, [repLoadingRows, repLoadingSearch]);
+
+  const repLoadingStats = useMemo(() => {
+    let totalQty = 0;
+    let totalBundles = 0;
+    for (const row of repLoadingRows) {
+      totalQty += row.qty;
+      totalBundles += row.bundles;
+    }
+    return {
+      totalSkus: repLoadingRows.length,
+      totalQty,
+      totalBundles
+    };
+  }, [repLoadingRows]);
+
   useEffect(() => {
     setMobileCashierNavOpen(false);
     scrollViewportToTop();
@@ -1887,12 +1975,20 @@ const CashierView = ({
   const repProductivityStats = useMemo(() => {
     const customerSet = new Set();
     let value = 0;
+    let directValue = 0;
+    let preorderValue = 0;
     let qty = 0;
     let bundles = 0;
     let singles = 0;
     for (const sale of repProductivitySales) {
       customerSet.add(String(sale.customerName || "Walk-in").trim() || "Walk-in");
-      value += saleNetTotal(sale);
+      const val = saleNetTotal(sale);
+      value += val;
+      if (sale.orderType === "preorder") {
+        preorderValue += val;
+      } else {
+        directValue += val;
+      }
       const returnedByProduct = saleReturnedQtyByProduct(sale, state.returns || []);
       const undeliveredByProduct = saleUndeliveredQtyByProduct(sale);
       for (const line of (sale.lines || [])) {
@@ -1906,6 +2002,8 @@ const CashierView = ({
     return {
       orders: repProductivitySales.length,
       value: Number(value.toFixed(2)),
+      directValue: Number(directValue.toFixed(2)),
+      preorderValue: Number(preorderValue.toFixed(2)),
       qty,
       bundles,
       singles,
@@ -2140,6 +2238,7 @@ const CashierView = ({
         <button type="button" className={`cashier-nav-stock ${cashierPage === "stock" ? "active" : ""}`} onClick={() => setCashierPage("stock")}><span className="nav-emoji" aria-hidden="true">📦</span>Stock</button>
         <button type="button" className={`cashier-nav-customers ${cashierPage === "customers" ? "active" : ""}`} onClick={() => setCashierPage("customers")}><span className="nav-emoji" aria-hidden="true">👥</span>Customers</button>
         <button type="button" className={`cashier-nav-deliveries ${cashierPage === "deliveries" ? "active" : ""}`} onClick={() => setCashierPage("deliveries")}><span className="nav-emoji" aria-hidden="true">✅</span>Confirm Deliveries</button>
+        <button type="button" className={`cashier-nav-loading ${cashierPage === "loadingSheet" ? "active" : ""}`} onClick={() => setCashierPage("loadingSheet")}><span className="nav-emoji" aria-hidden="true">📋</span>Loading Sheet</button>
         <button type="button" className="cashier-sidebar-logout" onClick={onLogout}><span className="nav-emoji" aria-hidden="true">🚪</span>Log Out</button>
         <div className="side-menu-footer">
           <a href="https://www.jnco.tech" target="_blank" rel="noreferrer">
@@ -2156,6 +2255,7 @@ const CashierView = ({
         <button type="button" className={`cashier-nav-stock ${cashierPage === "stock" ? "active" : ""}`} onClick={() => setCashierPage("stock")}><span className="nav-emoji" aria-hidden="true">📦</span>Stock</button>
         <button type="button" className={`cashier-nav-customers ${cashierPage === "customers" ? "active" : ""}`} onClick={() => setCashierPage("customers")}><span className="nav-emoji" aria-hidden="true">👥</span>Customers</button>
         <button type="button" className={`cashier-nav-deliveries ${cashierPage === "deliveries" ? "active" : ""}`} onClick={() => setCashierPage("deliveries")}><span className="nav-emoji" aria-hidden="true">✅</span>Confirm Deliveries</button>
+        <button type="button" className={`cashier-nav-loading ${cashierPage === "loadingSheet" ? "active" : ""}`} onClick={() => setCashierPage("loadingSheet")}><span className="nav-emoji" aria-hidden="true">📋</span>Loading Sheet</button>
       </div>
 
       {cashierPage === "billing" ? (
@@ -3122,14 +3222,22 @@ const CashierView = ({
                 </label>
               </div>
             </div>
-            <div className="rep-productivity-grid">
+            <div className="rep-productivity-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}>
               <article>
                 <span>Orders</span>
                 <strong>{repProductivityStats.orders}</strong>
               </article>
-              <article>
-                <span>Value</span>
-                <strong>{currency(repProductivityStats.value)}</strong>
+              <article style={{ borderLeft: "3px solid #16a34a" }}>
+                <span>Real Bill Value</span>
+                <strong style={{ color: "#16a34a" }}>{currency(repProductivityStats.directValue)}</strong>
+              </article>
+              <article style={{ borderLeft: "3px solid #d97706" }}>
+                <span>Pre-Order Value</span>
+                <strong style={{ color: "#d97706" }}>{currency(repProductivityStats.preorderValue)}</strong>
+              </article>
+              <article style={{ borderLeft: "3px solid #2563eb" }}>
+                <span>Total Sales Value</span>
+                <strong style={{ color: "#2563eb" }}>{currency(repProductivityStats.value)}</strong>
               </article>
               <article>
                 <span>Total Qty</span>
@@ -3162,16 +3270,30 @@ const CashierView = ({
               {filteredRepSales.map((sale) => (
                 <article key={sale.id} className="list-row rep-sale-card">
                   <div className="rep-sale-main">
-                    <div className="rep-sale-id-row">
+                    <div className="rep-sale-id-row" style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
                       <strong>#{sale.id}</strong>
                       <span className={`rep-sale-payment rep-sale-payment-${String(sale.paymentType || "").toLowerCase()}`}>{sale.paymentType}</span>
+                      {sale.orderType === "preorder" ? (
+                        <span className="tag" style={{ background: "#fef3c7", color: "#b45309", padding: "2px 8px", borderRadius: "4px", fontSize: "0.8em", fontWeight: 700 }}>
+                          🚚 Pre-Order ({sale.preOrderStatus || "pending"})
+                        </span>
+                      ) : (
+                        <span className="tag" style={{ background: "#dcfce7", color: "#15803d", padding: "2px 8px", borderRadius: "4px", fontSize: "0.8em", fontWeight: 700 }}>
+                          💵 Direct Bill
+                        </span>
+                      )}
                     </div>
                     <p className="rep-sale-meta">{new Date(sale.createdAt).toLocaleString()}</p>
                     <p className="rep-sale-customer">{sale.customerName}</p>
                     <p className="rep-sale-meta">Lorry: {sale.lorry || "-"}</p>
                   </div>
                   <div className="rep-sale-side">
-                    <strong className="rep-sale-total">{currency(saleNetTotal(sale))}</strong>
+                    <strong className="rep-sale-total" style={{ color: sale.orderType === "preorder" ? "#d97706" : "#0f172a" }}>
+                      {currency(saleNetTotal(sale))}
+                    </strong>
+                    <span style={{ fontSize: "0.78em", color: "#64748b", display: "block", textAlign: "right" }}>
+                      {sale.orderType === "preorder" ? "Pre-Order Value" : "Real Bill Value"}
+                    </span>
                     <div className="sales-row-actions">
                       <button
                         type="button"
@@ -3658,6 +3780,107 @@ const CashierView = ({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {cashierPage === "loadingSheet" ? (
+        <main className="panel rep-ui-2" style={{ padding: "1rem" }}>
+          <div className="section-head" style={{ marginBottom: "1rem" }}>
+            <div>
+              <p className="eyebrow" style={{ fontSize: "0.85em", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Rep Live Loading Sheet</p>
+              <h2 style={{ margin: "0.2rem 0" }}>Item-Wise Loading Sheet</h2>
+              <p className="form-hint">Live summary of total items loaded by lorry and date.</p>
+            </div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center", marginTop: "0.75rem" }}>
+              <label className="stock-form-field" style={{ margin: 0, minWidth: "140px" }}>
+                <span>Select Lorry</span>
+                <select value={repLoadingLorry} onChange={(e) => setRepLoadingLorry(e.target.value)}>
+                  {ORDER_LORRIES.map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="stock-form-field" style={{ margin: 0, minWidth: "150px" }}>
+                <span>Date</span>
+                <input
+                  type="date"
+                  value={repLoadingDate}
+                  onChange={(e) => setRepLoadingDate(e.target.value)}
+                />
+              </label>
+              {repLoadingDate ? (
+                <button type="button" className="ghost" style={{ marginTop: "18px" }} onClick={() => setRepLoadingDate("")}>Clear Date</button>
+              ) : null}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px", marginBottom: "1rem" }}>
+            <div className="stat-card" style={{ background: "#f8fafc", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <span style={{ fontSize: "0.8em", color: "#64748b" }}>Total SKUs</span>
+              <strong style={{ display: "block", fontSize: "1.3em", color: "#0f172a" }}>{repLoadingStats.totalSkus}</strong>
+            </div>
+            <div className="stat-card" style={{ background: "#f8fafc", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <span style={{ fontSize: "0.8em", color: "#64748b" }}>Total Units</span>
+              <strong style={{ display: "block", fontSize: "1.3em", color: "#2563eb" }}>{repLoadingStats.totalQty}</strong>
+            </div>
+            <div className="stat-card" style={{ background: "#f8fafc", padding: "0.85rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+              <span style={{ fontSize: "0.8em", color: "#64748b" }}>Total Cases / Bundles</span>
+              <strong style={{ display: "block", fontSize: "1.3em", color: "#16a34a" }}>{repLoadingStats.totalBundles}</strong>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "1rem" }}>
+            <input
+              type="text"
+              placeholder="Search loaded items by name, SKU, category..."
+              value={repLoadingSearch}
+              onChange={(e) => setRepLoadingSearch(e.target.value)}
+              className="search-input"
+              style={{ width: "100%", padding: "0.6rem 0.8rem", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+            />
+          </div>
+
+          {filteredRepLoadingRows.length === 0 ? (
+            <div className="empty-state" style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>
+              <p>No loaded items found for {repLoadingLorry}{repLoadingDate ? ` on ${repLoadingDate}` : ""}.</p>
+            </div>
+          ) : (
+            <div className="table-wrapper" style={{ overflowX: "auto" }}>
+              <table className="data-table" style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
+                    <th style={{ padding: "8px 12px" }}>Item Name</th>
+                    <th style={{ padding: "8px 12px" }}>Size</th>
+                    <th style={{ padding: "8px 12px" }}>SKU</th>
+                    <th style={{ padding: "8px 12px" }}>Category</th>
+                    <th style={{ padding: "8px 12px" }}>Total Qty</th>
+                    <th style={{ padding: "8px 12px" }}>Cases & Loose Singles</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRepLoadingRows.map((row) => (
+                    <tr key={row.key} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                      <td style={{ padding: "10px 12px" }}><strong>{row.name}</strong></td>
+                      <td style={{ padding: "10px 12px" }}>{row.size || "-"}</td>
+                      <td style={{ padding: "10px 12px" }}><code>{row.sku}</code></td>
+                      <td style={{ padding: "10px 12px" }}><span className="tag" style={{ background: "#e0f2fe", color: "#0369a1", padding: "2px 6px", borderRadius: "4px", fontSize: "0.85em" }}>{row.category || "General"}</span></td>
+                      <td style={{ padding: "10px 12px" }}><strong style={{ fontSize: "1.1em", color: "#0f172a" }}>{row.qty}</strong></td>
+                      <td style={{ padding: "10px 12px" }}>
+                        {row.bundleSize > 0 ? (
+                          <span style={{ fontWeight: 600, color: "#16a34a" }}>
+                            {row.bundles} Case{row.bundles === 1 ? "" : "s"}
+                            {row.balance > 0 ? ` + ${row.balance} Loose` : ""}
+                          </span>
+                        ) : (
+                          <span>{row.qty} Singles</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </main>
       ) : null}
 
       {showCustomerPicker ? (
@@ -9614,6 +9837,7 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
             <div className="low-stock-modal-head">
               <h3>Receipt #{viewedSale.id}</h3>
               <div className="receipt-preview-head-actions">
+                <button type="button" className="ghost" onClick={() => setViewSaleId("")}>← Back</button>
                 <button type="button" className="receipt-print-action" onClick={() => printAdminSaleReceipt(viewedSale)}>Print</button>
                 <button type="button" className="ghost" onClick={() => setViewSaleId("")}>Close</button>
               </div>
@@ -9671,11 +9895,15 @@ const AdminView = ({ state, dashboard, message, onError, requestConfirm, onSaleD
                   );
                 })}
               </div>
-              <div className="receipt-summary-row">
+              <div className="receipt-summary-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1rem" }}>
                 <div className="receipt-summary-texts">
                   <p className="form-hint">Discount: {currency(viewedSale.discount || 0)}</p>
                   {viewedSaleReturnedAmount > 0 ? <p className="form-hint return-adjust-text">Returns: - {currency(viewedSaleReturnedAmount)}</p> : null}
                   <p className="form-hint"><strong>Total: {currency(viewedSaleNetAmount || 0)}</strong></p>
+                </div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button type="button" className="ghost" onClick={() => setViewSaleId("")}>← Back</button>
+                  <button type="button" className="receipt-print-action" onClick={() => printAdminSaleReceipt(viewedSale)}>Print</button>
                 </div>
               </div>
             </div>
@@ -10192,7 +10420,7 @@ export const App = () => {
   const preOrderReservedMap = useMemo(() => {
     const map = new Map();
     for (const sale of (state.sales || [])) {
-      if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending") continue;
+      if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending" || sale.stockDecremented !== false) continue;
       for (const line of (sale.lines || [])) {
         const key = String(line.productId || "").trim();
         if (!key) continue;

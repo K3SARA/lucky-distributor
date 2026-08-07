@@ -74,7 +74,7 @@ const buildPreOrderReservedMap = (state, excludeSaleId = "") => {
   const map = new Map();
   for (const sale of (state.sales || [])) {
     if (String(sale.id || "") === String(excludeSaleId || "")) continue;
-    if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending") continue;
+    if (sale.orderType !== "preorder" || sale.preOrderStatus !== "pending" || sale.stockDecremented !== false) continue;
     for (const line of (sale.lines || [])) {
       const key = String(line.productId || "").trim();
       if (!key) continue;
@@ -314,10 +314,7 @@ const recalculateSaleFinancials = (sale) => {
   const latestCheque = chequePayments.length ? chequePayments[chequePayments.length - 1] : null;
   const returnedAmount = roundMoney(sale.returnedAmount || 0);
   const undeliveredAmount = computeDeliveryAdjustmentsAmount(sale);
-  // Also zero out netTotalAfterReturns for a pending pre-order — it isn't a
-  // completed sale yet, so it shouldn't inflate revenue/dashboard/report totals
-  // (which read this field via the client's saleNetTotal() helper) before delivery.
-  const netTotalAfterReturns = isPendingPreOrder ? 0 : roundMoney(Math.max(0, Number(sale.total || 0) - returnedAmount - undeliveredAmount));
+  const netTotalAfterReturns = roundMoney(Math.max(0, Number(sale.total || 0) - returnedAmount - undeliveredAmount));
   const rawPaid = totalPaymentsAmount(allPaidPayments);
   const paidAmount = roundMoney(Math.min(netTotalAfterReturns, rawPaid));
   const outstandingAmount = isPendingPreOrder ? 0 : roundMoney(Math.max(0, netTotalAfterReturns - paidAmount));
@@ -1595,7 +1592,7 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
     lines: preparedLines,
     orderType,
     preOrderStatus: orderType === "preorder" ? "pending" : null,
-    stockDecremented: orderType !== "preorder",
+    stockDecremented: true,
     emptyBottlesOwed,
     emptyBottlesCollected: 0
   });
@@ -1682,12 +1679,10 @@ app.post("/sales", requireAuth, requireRole("cashier", "admin"), (req, res) => {
     draft.customers = draft.customers || [];
     draft.staff = draft.staff || [];
 
-    if (prepared.orderType !== "preorder") {
-      for (const line of prepared.lines) {
-        const product = draft.products.find((item) => item.id === line.productId);
-        if (product) {
-          product.stock = Number((product.stock - line.quantity).toFixed(2));
-        }
+    for (const line of prepared.lines) {
+      const product = draft.products.find((item) => item.id === line.productId);
+      if (product) {
+        product.stock = Number((product.stock - line.quantity).toFixed(2));
       }
     }
 
@@ -2208,6 +2203,13 @@ app.post("/sales/:id/confirm-preorder", requireAuth, requireRole("cashier", "adm
         const product = draft.products.find((item) => item.id === line.productId);
         if (product) {
           product.stock = Number((Number(product.stock || 0) - Number(line.quantity || 0)).toFixed(2));
+        }
+      }
+    } else if (shortLines.length > 0) {
+      for (const shortLine of shortLines) {
+        const product = draft.products.find((item) => item.id === shortLine.productId);
+        if (product) {
+          product.stock = Number((Number(product.stock || 0) + Number(shortLine.quantity || 0)).toFixed(2));
         }
       }
     }
